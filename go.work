@@ -1,0 +1,8 @@
+go 1.25.2
+
+use (
+	"./randomtest_core"
+	"./randomtest_stdtest"
+	"./randomtest_stdtest_vue3_wailsv2"
+	"./randomtest_web_gin"
+)

@@ -1,0 +1,4 @@
+8ckup/
+data/*
+!data/.gitkeep
+!.gitignore
