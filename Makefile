@@ -16,13 +16,12 @@ MUSL_CXX_PATH = D:/Tools/cross-tools/x86_64-linux-musl/bin/x86_64-linux-musl-g++
 ZIG_PATH = D:/Tools/zig-x86_64-windows-0.16.0-dev.2490+fce7878a9/zig.exe
 
 WEB_CODE_PATH = ./randomtest_web_gin
-WEB_MAIN = ./main.go
+WEB_MAIN = main.go
 WEB_MAIN_PATH = $(WEB_CODE_PATH)/$(WEB_MAIN)
 STDTEST_CODE_PATH = ./randomtest_stdtest
-STDTEST_MAIN = ./randomtest_stdtest.go
+STDTEST_MAIN = randomtest_stdtest.go
 STDTEST_MAIN_PATH = $(STDTEST_CODE_PATH)/$(STDTEST_MAIN)
 STDTEST_VUE3_WAILSV2_CODE_PATH = ./randomtest_stdtest_vue3_wailsv2
-# STDTEST_VUE3_WAILSV2_TESTMAIN = ./randomtest_stdtest_vue3_wailsv2_test.go
 
 BUILDDIR = release
 
@@ -139,8 +138,8 @@ help:
 	@echo "make build_stdtest_windows_amd64:              build randomtest_stdtest.go -- stdtest windows amd64 version"
 	@echo "make build_stdtest_linux_amd64:                build randomtest_stdtest.go -- stdtest linux amd64 version"
 	@echo "make build_stdtest_darwin_arm64:               build randomtest_stdtest.go -- stdtest darwin arm64 version"
-	@echo "make run_stdtest_vue3_wailsv2:                 run randomtest_stdtest_vue3_wailsv2"
 	@echo "make run_stdtest_vue3_wailsv2_test:            test randomtest_stdtest_vue3_wailsv2"
+	@echo "make run_stdtest_vue3_wailsv2:                 run randomtest_stdtest_vue3_wailsv2"
 	@echo "make build_stdtest_vue3_wailsv2_windows_amd64: build randomtest_stdtest_vue3_wailsv2 -- stdtest vue3 wailsv2 windows amd64 version"
 	@echo "make build_all:                                build all works"
 	@echo "make clean:                                    clean middle files"
