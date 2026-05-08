@@ -1,1215 +1,1299 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>随机数检测 Web 控制台</title>
-    <style>
-        :root {
-            --bg-top: #f1f6ff;
-            --bg-bottom: #eaf2ff;
-            --surface: rgba(255, 255, 255, 0.78);
-            --surface-strong: #ffffff;
-            --line: rgba(7, 77, 146, 0.12);
-            --text: #0f2f56;
-            --muted: #5d7899;
-            --accent: #0d78d8;
-            --accent-strong: #0a66ba;
-            --ok: #0e8f67;
-            --bad: #c52749;
-            --glow: 0 20px 60px rgba(11, 68, 130, 0.2);
-            --radius-xl: 24px;
-            --radius-lg: 16px;
-            --radius-md: 12px;
-            --font-main: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-            --font-mono: "Cascadia Code", "Consolas", monospace;
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        html,
-        body {
-            margin: 0;
-            padding: 0;
-            min-height: 100%;
-            font-family: var(--font-main);
-            color: var(--text);
-            background:
-                radial-gradient(1200px 700px at 8% -8%, #d8e9ff 0%, transparent 62%),
-                radial-gradient(900px 500px at 95% 2%, #d7f0ff 0%, transparent 70%),
-                linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
-        }
-
-        /* ===== Page ===== */
-
-        .page {
-            width: min(1200px, 100% - 32px);
-            margin: 24px auto 28px;
-            display: grid;
-            gap: 18px;
-            animation: riseIn 380ms ease-out;
-        }
-
-        /* ===== Shared surface ===== */
-
-        .hero,
-        .panel,
-        .result-panel {
-            backdrop-filter: blur(16px);
-            background: var(--surface);
-            border: 1px solid var(--line);
-            border-radius: var(--radius-xl);
-            box-shadow: var(--glow);
-        }
-
-        /* ===== Hero ===== */
-
-        .hero {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 16px;
-            padding: 28px 26px;
-        }
-
-        .hero h1 {
-            margin: 0;
-            font-size: clamp(24px, 3.2vw, 36px);
-            font-weight: 700;
-            letter-spacing: 0.2px;
-        }
-
-        .hero p {
-            margin: 8px 0 0;
-            font-size: 14px;
-            color: var(--muted);
-        }
-
-        .chip {
-            padding: 9px 14px;
-            border: 1px solid var(--line);
-            border-radius: 999px;
-            background: #ffffff;
-            color: var(--accent-strong);
-            font-size: 13px;
-            font-weight: 600;
-            white-space: nowrap;
-        }
-
-        .version {
-            font-size: 14px;
-            font-weight: 400;
-            font-family: var(--font-mono);
-            color: var(--muted);
-        }
-
-        /* ===== Grid ===== */
-
-        .grid {
-            display: grid;
-            gap: 18px;
-            grid-template-columns: 4fr 6fr;
-        }
-
-        /* ===== Panel ===== */
-
-        .panel {
-            padding: 20px;
-        }
-
-        .panel h2 {
-            margin: 0 0 14px;
-            font-size: 19px;
-        }
-
-        /* ===== Upload box ===== */
-
-        .upload-box {
-            padding: 22px;
-            border: 1px dashed rgba(13, 120, 216, 0.4);
-            border-radius: var(--radius-lg);
-            background: linear-gradient(180deg, #fafdff, #edf5ff);
-            transition: border-color 180ms ease, transform 180ms ease;
-        }
-
-        .upload-box.dragging {
-            border-color: var(--accent);
-            transform: translateY(-2px);
-        }
-
-        .api-row {
-            display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 12px;
-            align-items: center;
-        }
-
-        .api-row input[type="text"] {
-            width: 100%;
-            padding: 8px 10px;
-            border: 1px solid var(--line);
-            border-radius: 8px;
-            background: #fff;
-            font-family: var(--font-mono);
-            font-size: 12px;
-            color: var(--text);
-        }
-
-        .mode-row {
-            margin-top: 16px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 18px;
-            align-items: center;
-            font-size: 14px;
-            color: var(--text);
-        }
-
-        .mode-row label {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-weight: 600;
-        }
-
-        .row {
-            margin-top: 14px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            align-items: center;
-        }
-
-        .btn {
-            padding: 10px 14px;
-            border: none;
-            border-radius: 10px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
-        }
-
-        .btn:hover {
-            transform: translateY(-1px);
-        }
-
-        .btn:active {
-            transform: translateY(0);
-        }
-
-        .btn.primary {
-            background: linear-gradient(135deg, #0d78d8, #0c66bc);
-            color: #fff;
-            box-shadow: 0 10px 22px rgba(12, 102, 188, 0.35);
-        }
-
-        .btn.ghost {
-            background: #fff;
-            border: 1px solid var(--line);
-            color: var(--accent-strong);
-        }
-
-        .loading {
-            display: none;
-            align-items: center;
-            gap: 10px;
-            font-size: 13px;
-            color: var(--muted);
-        }
-
-        .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--accent);
-            box-shadow: 0 0 0 0 rgba(13, 120, 216, 0.7);
-            animation: pulse 1.25s infinite;
-        }
-
-        .file-meta {
-            margin-top: 14px;
-            display: none;
-            padding: 12px;
-            border: 1px solid var(--line);
-            border-radius: var(--radius-md);
-            background: #fff;
-            font-size: 13px;
-            animation: fadeIn 220ms ease-out;
-        }
-
-        .status {
-            margin-top: 12px;
-            display: none;
-            padding: 10px 12px;
-            border: 1px solid transparent;
-            border-radius: 10px;
-            font-size: 13px;
-        }
-
-        .status.error {
-            background: rgba(197, 39, 73, 0.1);
-            border-color: rgba(197, 39, 73, 0.24);
-            color: var(--bad);
-        }
-
-        .status.success {
-            background: rgba(14, 143, 103, 0.1);
-            border-color: rgba(14, 143, 103, 0.24);
-            color: var(--ok);
-        }
-
-        /* ===== Options ===== */
-
-        .options {
-            display: grid;
-            gap: 10px;
-            max-height: 500px;
-            padding-right: 4px;
-            overflow: auto;
-            transition: opacity 160ms ease;
-        }
-
-        .options.readonly {
-            opacity: 0.5;
-        }
-
-        .option {
-            padding: 11px 12px;
-            border: 1px solid var(--line);
-            border-radius: 12px;
-            background: rgba(255, 255, 255, 0.86);
-        }
-
-        .option label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 14px;
-            font-weight: 600;
-        }
-
-        .params {
-            margin-top: 8px;
-            display: none;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px;
-        }
-
-        .params.show {
-            display: grid;
-        }
-
-        .params.row {
-            grid-template-columns: repeat(3, auto);
-        }
-
-        .params.single {
-            grid-template-columns: 1fr;
-        }
-
-        .params label {
-            font-weight: 400;
-        }
-
-        .param-field {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .param-label {
-            font-size: 12px;
-            font-weight: 600;
-            font-family: var(--font-mono);
-            color: var(--muted);
-            white-space: nowrap;
-        }
-
-        input[type="number"] {
-            width: 100%;
-            padding: 7px 8px;
-            border: 1px solid var(--line);
-            border-radius: 8px;
-            background: #fff;
-            font-family: var(--font-mono);
-            color: var(--text);
-        }
-
-        /* ===== Result panel ===== */
-
-        .result-panel {
-            padding: 18px;
-            display: none;
-        }
-
-        .result-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-
-        .result-header h2 {
-            margin: 0;
-            font-size: 19px;
-        }
-
-        .table-wrap {
-            overflow-x: auto;
-            border: 1px solid var(--line);
-            border-radius: 14px;
-            background: #fff;
-        }
-
-        table {
-            width: 100%;
-            min-width: 960px;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-
-        thead th {
-            padding: 11px;
-            border-bottom: 1px solid var(--line);
-            background: #eef6ff;
-            color: #1f4e7c;
-            text-align: left;
-        }
-
-        tbody td {
-            padding: 10px 11px;
-            border-top: 1px solid rgba(7, 77, 146, 0.08);
-            vertical-align: top;
-        }
-
-        tbody tr:nth-child(even) {
-            background: #fbfdff;
-        }
-
-        .mono {
-            font-family: var(--font-mono);
-        }
-
-        .pass-cell {
-            text-align: center;
-            font-size: 18px;
-        }
-
-        /* ===== Keyframes ===== */
-
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(13, 120, 216, 0.7); }
-            70% { box-shadow: 0 0 0 12px rgba(13, 120, 216, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(13, 120, 216, 0); }
-        }
-
-        @keyframes riseIn {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        /* ===== Responsive ===== */
-
-        @media (max-width: 960px) {
-            .grid {
-                grid-template-columns: 1fr;
-            }
-
-            .hero {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-        }
-    </style>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>随机数检测 Web 控制台</title>
+	<style>
+		:root {
+			--bg-top: #f1f6ff;
+			--bg-bottom: #eaf2ff;
+			--surface: rgba(255, 255, 255, 0.78);
+			--surface-strong: #ffffff;
+			--line: rgba(7, 77, 146, 0.12);
+			--text: #0f2f56;
+			--muted: #5d7899;
+			--accent: #0d78d8;
+			--accent-strong: #0a66ba;
+			--ok: #0e8f67;
+			--bad: #c52749;
+			--glow: 0 20px 60px rgba(11, 68, 130, 0.2);
+			--radius-xl: 24px;
+			--radius-lg: 16px;
+			--radius-md: 12px;
+			--font-main: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+			--font-mono: "Cascadia Code", "Consolas", monospace;
+		}
+
+		* {
+			box-sizing: border-box;
+		}
+
+		html,
+		body {
+			margin: 0;
+			padding: 0;
+			min-height: 100%;
+			font-family: var(--font-main);
+			color: var(--text);
+			background:
+				radial-gradient(1200px 700px at 8% -8%, #d8e9ff 0%, transparent 62%),
+				radial-gradient(900px 500px at 95% 2%, #d7f0ff 0%, transparent 70%),
+				linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+		}
+
+		/* ===== Page ===== */
+
+		.page {
+			width: min(1200px, 100% - 32px);
+			margin: 24px auto 28px;
+			display: grid;
+			gap: 18px;
+			animation: riseIn 380ms ease-out;
+		}
+
+		/* ===== Shared surface ===== */
+
+		.hero,
+		.panel,
+		.result-panel {
+			backdrop-filter: blur(16px);
+			background: var(--surface);
+			border: 1px solid var(--line);
+			border-radius: var(--radius-xl);
+			box-shadow: var(--glow);
+		}
+
+		/* ===== Hero ===== */
+
+		.hero {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			gap: 16px;
+			padding: 28px 26px;
+		}
+
+		.hero h1 {
+			margin: 0;
+			font-size: clamp(24px, 3.2vw, 36px);
+			font-weight: 700;
+			letter-spacing: 0.2px;
+		}
+
+		.hero p {
+			margin: 8px 0 0;
+			font-size: 14px;
+			color: var(--muted);
+		}
+
+		.chip {
+			padding: 9px 14px;
+			border: 1px solid var(--line);
+			border-radius: 999px;
+			background: #ffffff;
+			color: var(--accent-strong);
+			font-size: 13px;
+			font-weight: 600;
+			white-space: nowrap;
+		}
+
+		.version {
+			font-size: 14px;
+			font-weight: 400;
+			font-family: var(--font-mono);
+			color: var(--muted);
+		}
+
+		/* ===== Grid ===== */
+
+		.grid {
+			display: grid;
+			gap: 18px;
+			grid-template-columns: 4fr 6fr;
+		}
+
+		/* ===== Panel ===== */
+
+		.panel {
+			padding: 20px;
+		}
+
+		.panel h2 {
+			margin: 0 0 14px;
+			font-size: 19px;
+		}
+
+		/* ===== Upload box ===== */
+
+		.upload-box {
+			padding: 22px;
+			border: 1px dashed rgba(13, 120, 216, 0.4);
+			border-radius: var(--radius-lg);
+			background: linear-gradient(180deg, #fafdff, #edf5ff);
+			transition: border-color 180ms ease, transform 180ms ease;
+		}
+
+		.upload-box.dragging {
+			border-color: var(--accent);
+			transform: translateY(-2px);
+		}
+
+		.api-row {
+			display: grid;
+			grid-template-columns: 1fr auto;
+			gap: 12px;
+			align-items: center;
+		}
+
+		.api-row input[type="text"] {
+			width: 100%;
+			padding: 8px 10px;
+			border: 1px solid var(--line);
+			border-radius: 8px;
+			background: #fff;
+			font-family: var(--font-mono);
+			font-size: 12px;
+			color: var(--text);
+		}
+
+		.mode-row {
+			margin-top: 16px;
+			display: flex;
+			flex-wrap: wrap;
+			gap: 18px;
+			align-items: center;
+			font-size: 14px;
+			color: var(--text);
+		}
+
+		.mode-row label {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			font-weight: 600;
+		}
+
+		.row {
+			margin-top: 14px;
+			display: flex;
+			flex-wrap: wrap;
+			gap: 12px;
+			align-items: center;
+		}
+
+		.btn {
+			padding: 10px 14px;
+			border: none;
+			border-radius: 10px;
+			font-size: 14px;
+			font-weight: 600;
+			cursor: pointer;
+			transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+		}
+
+		.btn:hover {
+			transform: translateY(-1px);
+		}
+
+		.btn:active {
+			transform: translateY(0);
+		}
+
+		.btn.primary {
+			background: linear-gradient(135deg, #0d78d8, #0c66bc);
+			color: #fff;
+			box-shadow: 0 10px 22px rgba(12, 102, 188, 0.35);
+		}
+
+		.btn.ghost {
+			background: #fff;
+			border: 1px solid var(--line);
+			color: var(--accent-strong);
+		}
+
+		.btn.stop {
+			background: linear-gradient(135deg, #c52749, #a82040);
+			color: #fff;
+			box-shadow: 0 10px 22px rgba(168, 32, 64, 0.35);
+		}
+
+		.loading {
+			display: none;
+			align-items: center;
+			gap: 10px;
+			font-size: 13px;
+			color: var(--muted);
+		}
+
+		.dot {
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			background: var(--accent);
+			box-shadow: 0 0 0 0 rgba(13, 120, 216, 0.7);
+			animation: pulse 1.25s infinite;
+		}
+
+		.file-meta {
+			margin-top: 14px;
+			display: none;
+			padding: 12px;
+			border: 1px solid var(--line);
+			border-radius: var(--radius-md);
+			background: #fff;
+			font-size: 13px;
+			animation: fadeIn 220ms ease-out;
+		}
+
+		.status {
+			margin-top: 12px;
+			display: none;
+			padding: 10px 12px;
+			border: 1px solid transparent;
+			border-radius: 10px;
+			font-size: 13px;
+		}
+
+		.status.error {
+			background: rgba(197, 39, 73, 0.1);
+			border-color: rgba(197, 39, 73, 0.24);
+			color: var(--bad);
+		}
+
+		.status.success {
+			background: rgba(14, 143, 103, 0.1);
+			border-color: rgba(14, 143, 103, 0.24);
+			color: var(--ok);
+		}
+
+		/* ===== Options ===== */
+
+		.options {
+			display: grid;
+			gap: 10px;
+			max-height: 500px;
+			padding-right: 4px;
+			overflow: auto;
+			transition: opacity 160ms ease;
+		}
+
+		.options.readonly {
+			opacity: 0.5;
+		}
+
+		.option {
+			padding: 11px 12px;
+			border: 1px solid var(--line);
+			border-radius: 12px;
+			background: rgba(255, 255, 255, 0.86);
+		}
+
+		.option label {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			font-size: 14px;
+			font-weight: 600;
+		}
+
+		.params {
+			margin-top: 8px;
+			display: none;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 8px;
+		}
+
+		.params.show {
+			display: grid;
+		}
+
+		.params.row {
+			grid-template-columns: repeat(3, auto);
+		}
+
+		.params.single {
+			grid-template-columns: 1fr;
+		}
+
+		.params label {
+			font-weight: 400;
+		}
+
+		.param-field {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+		}
+
+		.param-label {
+			font-size: 12px;
+			font-weight: 600;
+			font-family: var(--font-mono);
+			color: var(--muted);
+			white-space: nowrap;
+		}
+
+		input[type="number"] {
+			width: 100%;
+			padding: 7px 8px;
+			border: 1px solid var(--line);
+			border-radius: 8px;
+			background: #fff;
+			font-family: var(--font-mono);
+			color: var(--text);
+		}
+
+		/* ===== Result panel ===== */
+
+		.result-panel {
+			padding: 18px;
+			display: none;
+		}
+
+		.result-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			gap: 10px;
+			margin-bottom: 10px;
+		}
+
+		.result-header h2 {
+			margin: 0;
+			font-size: 19px;
+		}
+
+		.table-wrap {
+			overflow-x: auto;
+			border: 1px solid var(--line);
+			border-radius: 14px;
+			background: #fff;
+		}
+
+		table {
+			width: 100%;
+			min-width: 960px;
+			border-collapse: collapse;
+			font-size: 13px;
+		}
+
+		thead th {
+			padding: 11px;
+			border-bottom: 1px solid var(--line);
+			background: #eef6ff;
+			color: #1f4e7c;
+			text-align: left;
+		}
+
+		tbody td {
+			padding: 10px 11px;
+			border-top: 1px solid rgba(7, 77, 146, 0.08);
+			vertical-align: top;
+		}
+
+		tbody tr:nth-child(even) {
+			background: #fbfdff;
+		}
+
+		.mono {
+			font-family: var(--font-mono);
+		}
+
+		.pass-cell {
+			text-align: center;
+			font-size: 18px;
+		}
+
+		/* ===== Keyframes ===== */
+
+		@keyframes pulse {
+			0% {
+				box-shadow: 0 0 0 0 rgba(13, 120, 216, 0.7);
+			}
+
+			70% {
+				box-shadow: 0 0 0 12px rgba(13, 120, 216, 0);
+			}
+
+			100% {
+				box-shadow: 0 0 0 0 rgba(13, 120, 216, 0);
+			}
+		}
+
+		@keyframes riseIn {
+			from {
+				opacity: 0;
+				transform: translateY(8px);
+			}
+
+			to {
+				opacity: 1;
+				transform: translateY(0);
+			}
+		}
+
+		@keyframes fadeIn {
+			from {
+				opacity: 0;
+			}
+
+			to {
+				opacity: 1;
+			}
+		}
+
+		/* ===== Responsive ===== */
+
+		@media (max-width: 960px) {
+			.grid {
+				grid-template-columns: 1fr;
+			}
+
+			.hero {
+				flex-direction: column;
+				align-items: flex-start;
+			}
+		}
+	</style>
 </head>
+
 <body>
-    <main class="page">
-        <section class="hero">
-            <div>
-                <h1>随机数检测 Web 控制台 <span class="version">V1.0.1</span></h1>
-                <p>用于 NIST/GM 标准下的 2 级（1000000 bits）随机性检测测试执行与结果查看。支持自定义测试</p>
-                <p>技术栈：HTML + CSS + JavaScript + Gin + Go</p>
-            </div>
-            <div class="chip">仅支持单个 1,000,000 bits 文件</div>
-        </section>
-
-        <section class="grid">
-            <article class="panel">
-                <h2>输入与执行</h2>
-                <div class="upload-box" id="uploadBox">
-                    <div class="api-row">
-                        <input id="apiOriginInput" type="text" placeholder="测试地址，例如 http://127.0.0.1:8888">
-                        <button class="btn ghost" id="saveApiBtn" type="button">更新测试地址</button>
-                    </div>
-                    <div class="mode-row">
-                        <label><input type="radio" name="testLevel" value="custom" checked>自定义</label>
-                        <label><input type="radio" name="testLevel" value="nist2">NIST-Level 2</label>
-                        <label><input type="radio" name="testLevel" value="gm2">GM-Level 2</label>
-                    </div>
-                    <div class="row">
-                        <button class="btn ghost" id="pickBtn" type="button">选择文件</button>
-                        <button class="btn primary" id="runBtn" type="button">开始测试</button>
-                        <div class="loading" id="loading"><span class="dot"></span>正在提交并等待结果...</div>
-                    </div>
-                    <input id="fileInput" type="file" accept=".bin,.dat,.txt,.raw" hidden>
-                    <div class="file-meta" id="fileMeta"></div>
-                    <div class="status" id="statusBox"></div>
-                </div>
-            </article>
-
-            <article class="panel">
-                <h2>测试项配置</h2>
-                <div class="options" id="optionsRoot">
-                    <div class="option">
-                        <label><input type="checkbox" id="frequencyTest" checked>FrequencyTest（单比特频数检测）</label>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="blockFrequencyParams" id="blockFrequencyEnable" checked>BlockFrequencyTest（块内频数检测）</label>
-                        <div class="params show" id="blockFrequencyParams">
-                            <div class="param-field"><span class="param-label">M</span><input type="number" id="blockM" value="128" min="1" step="1"></div>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="cumulativeParams" id="cumulativeEnable" checked>CumulativeSumsTest（累积和检测）</label>
-                        <div class="params show row" id="cumulativeParams">
-                            <label><input type="checkbox" id="cumForward">前向</label>
-                            <label><input type="checkbox" id="cumBackward">后向</label>
-                            <label><input type="checkbox" id="cumAll" checked>全选</label>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" id="runsTest" checked>RunsTest（游程检测）</label>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="longestParams" id="longestEnable" checked>LongestRunOfOnesTest（块内最大游程检测）</label>
-                        <div class="params show row" id="longestParams">
-                            <label><input type="checkbox" id="longestBit1">比特 1</label>
-                            <label><input type="checkbox" id="longestBit0">比特 0</label>
-                            <label><input type="checkbox" id="longestAll" checked>全选</label>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="rankParams" id="rankEnable" checked>RankTest（矩阵秩检测）</label>
-                        <div class="params show" id="rankParams">
-                            <div class="param-field"><span class="param-label">R</span><input type="number" id="rankR" value="32" min="1" step="1"></div>
-                            <div class="param-field"><span class="param-label">C</span><input type="number" id="rankC" value="32" min="1" step="1"></div>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" id="dftTest" checked>DiscreteFourierTransformTest（离散傅里叶检测）</label>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="nonOverlapParams" id="nonOverlapEnable">NonOverlappingTemplateMatchingTest（非重叠模板匹配）</label>
-                        <div class="params show" id="nonOverlapParams">
-                            <div class="param-field"><span class="param-label">n</span><input type="number" id="nonOverlapN" value="1000000" min="1" step="1"></div>
-                            <div class="param-field"><span class="param-label">m</span><input type="number" id="nonOverlapM" value="9" min="1" step="1"></div>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="overlapParams" id="overlapEnable">OverlappingTemplateMatchingTest（重叠模板匹配）</label>
-                        <div class="params show" id="overlapParams">
-                            <div class="param-field"><span class="param-label">n</span><input type="number" id="overlapN" value="1000000" min="1" step="1"></div>
-                            <div class="param-field"><span class="param-label">m</span><input type="number" id="overlapM" value="9" min="1" step="1"></div>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" id="universalTest" checked>UniversalTest（通用统计检测）</label>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="approxParams" id="approxEnable" checked>ApproximateEntropyTest（近似熵检测）</label>
-                        <div class="params show" id="approxParams">
-                            <div class="param-field"><span class="param-label">m</span><input type="number" id="approxM" value="2" min="1" step="1"></div>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="randomExcParams" id="randomExcEnable">RandomExcursionsTest（随机游走检测）</label>
-                        <div class="params show" id="randomExcParams">
-                            <div class="param-field"><span class="param-label">N</span><input type="number" id="randomExcN" value="1000000" min="1" step="1"></div>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="randomExcVParams" id="randomExcVEnable">RandomExcursionsVariantTest（随机游走变版检测）</label>
-                        <div class="params show" id="randomExcVParams">
-                            <div class="param-field"><span class="param-label">N</span><input type="number" id="randomExcVN" value="1000000" min="1" step="1"></div>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="serialParams" id="serialEnable" checked>SerialTest（序列检测）</label>
-                        <div class="params show" id="serialParams">
-                            <div class="param-field"><span class="param-label">m</span><input type="number" id="serialM" value="16" min="1" step="1"></div>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="linearParams" id="linearEnable" checked>LinearComplexityTest（线性复杂度检测）</label>
-                        <div class="params show" id="linearParams">
-                            <div class="param-field"><span class="param-label">M</span><input type="number" id="linearM" value="500" min="1" step="1"></div>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="pokerParams" id="pokerEnable" checked>PokerTest（扑克检测）</label>
-                        <div class="params show" id="pokerParams">
-                            <div class="param-field"><span class="param-label">m</span><input type="number" id="pokerM" value="4" min="1" step="1"></div>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" id="runsDistributionTest" checked>RunsDistributionTest（游程分布检测）</label>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="binaryParams" id="binaryEnable" checked>BinaryDerivativeTest（二元导数检测）</label>
-                        <div class="params show" id="binaryParams">
-                            <div class="param-field"><span class="param-label">k</span><input type="number" id="binaryK" value="3" min="1" step="1"></div>
-                        </div>
-                    </div>
-
-                    <div class="option">
-                        <label><input type="checkbox" data-param-target="autoParams" id="autoEnable" checked>AutocorrelationTest（自相关检测）</label>
-                        <div class="params show" id="autoParams">
-                            <div class="param-field"><span class="param-label">d</span><input type="number" id="autoD" value="1" min="1" step="1"></div>
-                        </div>
-                    </div>
-                </div>
-            </article>
-        </section>
-
-        <section class="result-panel" id="resultPanel">
-            <div class="result-header">
-                <h2>测试结果</h2>
-                <div class="chip" id="resultCount">0 项</div>
-            </div>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>测试项名称</th>
-                            <th>P1 Value</th>
-                            <th>P2 Value</th>
-                            <th>PValue 是否通过</th>
-                            <th>Q1 Value</th>
-                            <th>Q2 Value</th>
-                            <th>QValue 是否通过</th>
-                            <th>测试结果</th>
-                        </tr>
-                    </thead>
-                    <tbody id="resultBody"></tbody>
-                </table>
-            </div>
-        </section>
-    </main>
-
-    <script>
-        /* ===== Constants ===== */
-
-        const REQUIRED_SIZE_BYTES = 125000;
-        const DEFAULT_API_ORIGIN = "http://127.0.0.1:8888";
-        const API_ORIGIN_STORAGE_KEY = "randomtest_api_origin";
-        const API_PATH_CUSTOM = "/api/v1/randomtest/handleRandomTestHTTPRequest";
-        const API_PATH_NIST_LEVEL2 = "/api/v1/randomtest/handleRandomTestHTTPRequestNISTLevel2";
-        const API_PATH_GM_LEVEL2 = "/api/v1/randomtest/handleRandomTestHTTPRequestGMLevel2";
-
-        const TEST_NAME_ORDER = [
-            "FrequencyTest",
-            "BlockFrequencyTest",
-            "CumulativeSumsTest",
-            "RunsTest",
-            "LongestRunOfOnesTest",
-            "RankTest",
-            "DiscreteFourierTransformTest",
-            "NonOverlappingTemplateMatchingTest",
-            "OverlappingTemplateMatchingTest",
-            "UniversalTest",
-            "ApproximateEntropyTest",
-            "RandomExcursionsTest",
-            "RandomExcursionsVariantTest",
-            "SerialTest",
-            "LinearComplexityTest",
-            "PokerTest",
-            "RunsDistributionTest",
-            "BinaryDerivativeTest",
-            "AutocorrelationTest"
-        ];
-
-        const TEST_NAME_ZH_MAP = {
-            FrequencyTest: "单比特频数检测",
-            BlockFrequencyTest: "块内频数检测",
-            CumulativeSumsTest: "累积和检测",
-            RunsTest: "游程检测",
-            LongestRunOfOnesTest: "块内最大游程检测",
-            RankTest: "矩阵秩检测",
-            DiscreteFourierTransformTest: "离散傅里叶检测",
-            NonOverlappingTemplateMatchingTest: "非重叠模板匹配",
-            OverlappingTemplateMatchingTest: "重叠模板匹配",
-            UniversalTest: "通用统计检测",
-            ApproximateEntropyTest: "近似熵检测",
-            RandomExcursionsTest: "随机游走检测",
-            RandomExcursionsVariantTest: "随机游走变版检测",
-            SerialTest: "序列检测",
-            LinearComplexityTest: "线性复杂度检测",
-            PokerTest: "扑克检测",
-            RunsDistributionTest: "游程分布检测",
-            BinaryDerivativeTest: "二元导数检测",
-            AutocorrelationTest: "自相关检测"
-        };
-
-        /* ===== Elements ===== */
-
-        const els = {
-            fileInput: document.getElementById("fileInput"),
-            pickBtn: document.getElementById("pickBtn"),
-            runBtn: document.getElementById("runBtn"),
-            apiOriginInput: document.getElementById("apiOriginInput"),
-            saveApiBtn: document.getElementById("saveApiBtn"),
-            fileMeta: document.getElementById("fileMeta"),
-            statusBox: document.getElementById("statusBox"),
-            loading: document.getElementById("loading"),
-            uploadBox: document.getElementById("uploadBox"),
-            resultPanel: document.getElementById("resultPanel"),
-            resultBody: document.getElementById("resultBody"),
-            resultCount: document.getElementById("resultCount")
-        };
-
-        /* ===== Utility functions ===== */
-
-        function normalizeApiOrigin(origin) {
-            if (!origin) {
-                return "";
-            }
-            return String(origin).trim().replace(/\/$/, "");
-        }
-
-        function resolveApiOrigin() {
-            const byInput = normalizeApiOrigin(els.apiOriginInput ? els.apiOriginInput.value : "");
-            if (byInput) {
-                return byInput;
-            }
-            const byStorage = normalizeApiOrigin(localStorage.getItem(API_ORIGIN_STORAGE_KEY));
-            if (byStorage) {
-                return byStorage;
-            }
-            if (window.location.port === "8888") {
-                return window.location.origin;
-            }
-            return DEFAULT_API_ORIGIN;
-        }
-
-        function toInt(value, fallback) {
-            const parsed = Number.parseInt(value, 10);
-            return Number.isNaN(parsed) ? fallback : parsed;
-        }
-
-        function getApiUrl() {
-            const selectedLevel = document.querySelector("input[name='testLevel']:checked");
-            const level = selectedLevel ? selectedLevel.value : "nist2";
-            let apiPath = API_PATH_NIST_LEVEL2;
-            if (level === "gm2") {
-                apiPath = API_PATH_GM_LEVEL2;
-            } else if (level === "custom") {
-                apiPath = API_PATH_CUSTOM;
-            }
-            return resolveApiOrigin() + apiPath;
-        }
-
-        function getTestLevel() {
-            const selectedLevel = document.querySelector("input[name='testLevel']:checked");
-            return selectedLevel ? selectedLevel.value : "nist2";
-        }
-
-        function showStatus(type, message) {
-            els.statusBox.className = "status " + type;
-            els.statusBox.textContent = message;
-            els.statusBox.style.display = "block";
-        }
-
-        function clearStatus() {
-            els.statusBox.style.display = "none";
-            els.statusBox.textContent = "";
-            els.statusBox.className = "status";
-        }
-
-        function formatValue(value) {
-            if (Array.isArray(value)) {
-                if (value.length === 0) {
-                    return "-";
-                }
-                return value.map(v => Number(v).toFixed(6)).join(", ");
-            }
-            if (value === null || typeof value === "undefined") {
-                return "-";
-            }
-            const num = Number(value);
-            if (Number.isFinite(num)) {
-                return num.toFixed(6);
-            }
-            return String(value);
-        }
-
-        function formatPassStatus(value) {
-            if (typeof value !== "boolean") {
-                return "-";
-            }
-            return value ? "✅" : "❌";
-        }
-
-        function checkValuePass(value) {
-            if (Array.isArray(value)) {
-                if (value.length === 0) {
-                    return false;
-                }
-                return value.every(v => Number(v) >= 0.01);
-            }
-            if (value === null || typeof value === "undefined") {
-                return false;
-            }
-            const num = Number(value);
-            if (!Number.isFinite(num)) {
-                return false;
-            }
-            return num >= 0.01;
-        }
-
-        function normalizeTestName(name) {
-            const raw = String(name || "").replace(/\s+/g, "");
-            if (!raw) {
-                return "";
-            }
-            if (TEST_NAME_ZH_MAP[raw]) {
-                return raw;
-            }
-            const lowered = raw.toLowerCase();
-            const matched = TEST_NAME_ORDER.find(item => item.toLowerCase() === lowered);
-            return matched || raw;
-        }
-
-        function formatTestTitle(name) {
-            const normalized = normalizeTestName(name);
-            const zhName = TEST_NAME_ZH_MAP[normalized];
-            if (!zhName) {
-                return normalized || "-";
-            }
-            return normalized + "（" + zhName + "）";
-        }
-
-        function readFileAsBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => {
-                    const dataUrl = String(reader.result || "");
-                    const parts = dataUrl.split(",");
-                    if (parts.length < 2) {
-                        reject(new Error("文件编码失败，无法提取 Base64 数据。"));
-                        return;
-                    }
-                    resolve(parts[1]);
-                };
-                reader.onerror = () => reject(new Error("文件读取失败。"));
-                reader.readAsDataURL(file);
-            });
-        }
-
-        /* ===== File validation ===== */
-
-        function validateSelectedFile() {
-            const files = els.fileInput.files;
-            if (!files || files.length !== 1) {
-                return { ok: false, message: "每次必须且只能选择 1 个文件。" };
-            }
-            const file = files[0];
-            if (file.size !== REQUIRED_SIZE_BYTES) {
-                return {
-                    ok: false,
-                    message: "文件大小必须严格为 125000 字节（1000000 bit），当前为 " + file.size + " 字节。"
-                };
-            }
-            return { ok: true, file };
-        }
-
-        function updateFileMeta() {
-            const check = validateSelectedFile();
-            if (!els.fileInput.files || els.fileInput.files.length === 0) {
-                els.fileMeta.style.display = "none";
-                return;
-            }
-            const file = els.fileInput.files[0];
-            const exactBits = file.size * 8;
-            els.fileMeta.innerHTML = [
-                "文件名: <span class=\"mono\">" + file.name + "</span>",
-                "大小: <span class=\"mono\">" + file.size + " bytes / " + exactBits + " bit</span>",
-                "校验: <span class=\"mono\">" + (check.ok ? "PASS" : "FAIL") + "</span>"
-            ].join("<br>");
-            els.fileMeta.style.display = "block";
-            if (!check.ok) {
-                showStatus("error", check.message);
-            } else {
-                showStatus("success", "文件校验通过，可执行测试。");
-            }
-        }
-
-        /* ===== Config management ===== */
-
-        function clearAllTestSelections() {
-            const optionsRoot = document.getElementById("optionsRoot");
-            if (!optionsRoot) {
-                return;
-            }
-            optionsRoot.querySelectorAll("input[type='checkbox']").forEach(input => {
-                input.checked = false;
-            });
-        }
-
-        function clearTestRecordsAndResults() {
-            els.fileInput.value = "";
-            els.fileMeta.innerHTML = "";
-            els.fileMeta.style.display = "none";
-            clearStatus();
-            els.resultBody.innerHTML = "";
-            els.resultCount.textContent = "0 项";
-            els.resultPanel.style.display = "none";
-        }
-
-        function refreshParamPanels() {
-            document.querySelectorAll("input[data-param-target]").forEach(input => {
-                const targetId = input.getAttribute("data-param-target");
-                const panel = document.getElementById(targetId);
-                if (!panel) {
-                    return;
-                }
-                panel.classList.toggle("show", input.checked);
-            });
-        }
-
-        function setConfigReadOnly(readOnly) {
-            const optionsRoot = document.getElementById("optionsRoot");
-            if (!optionsRoot) {
-                return;
-            }
-            optionsRoot.classList.toggle("readonly", readOnly);
-            optionsRoot.querySelectorAll("input, select, textarea, button").forEach(input => {
-                input.disabled = readOnly;
-            });
-        }
-
-        function syncTestLevelMode() {
-            const level = getTestLevel();
-            const isCustom = level === "custom";
-            clearAllTestSelections();
-            clearTestRecordsAndResults();
-            setConfigReadOnly(!isCustom);
-            refreshParamPanels();
-        }
-
-        /* ===== Results rendering ===== */
-
-        function renderResults(results) {
-            els.resultBody.innerHTML = "";
-            let totalRows = 0;
-            results.forEach(item => {
-                const p1Arr = Array.isArray(item.P1Value) ? item.P1Value : null;
-                const p2Arr = Array.isArray(item.P2Value) ? item.P2Value : null;
-                const q1Arr = Array.isArray(item.Q1Value) ? item.Q1Value : null;
-                const q2Arr = Array.isArray(item.Q2Value) ? item.Q2Value : null;
-                const rowCnt = Math.max(
-                    p1Arr ? p1Arr.length : 1,
-                    p2Arr ? p2Arr.length : 1,
-                    q1Arr ? q1Arr.length : 1,
-                    q2Arr ? q2Arr.length : 1
-                );
-                totalRows += rowCnt;
-                for (let i = 0; i < rowCnt; i++) {
-                    const p1v = p1Arr ? p1Arr[i] : item.P1Value;
-                    const p2v = p2Arr ? p2Arr[i] : item.P2Value;
-                    const q1v = q1Arr ? q1Arr[i] : item.Q1Value;
-                    const q2v = q2Arr ? q2Arr[i] : item.Q2Value;
-                    const passed = checkValuePass(p1v);
-                    const resultText = passed ? "通过" : "不通过";
-                    const tr = document.createElement("tr");
-                    const nameLabel = i === 0 ? (normalizeTestName(item.TestFuncName) || "-") : "";
-                    tr.innerHTML = [
-                        "<td class=\"mono\">" + nameLabel + "</td>",
-                        "<td class=\"mono\">" + formatValue(p1v) + "</td>",
-                        "<td class=\"mono\">" + formatValue(p2v) + "</td>",
-                        "<td class=\"pass-cell\">" + formatPassStatus(passed) + "</td>",
-                        "<td class=\"mono\">" + formatValue(q1v) + "</td>",
-                        "<td class=\"mono\">" + formatValue(q2v) + "</td>",
-                        "<td class=\"pass-cell\">" + formatPassStatus(passed) + "</td>",
-                        "<td>" + resultText + "</td>"
-                    ].join("");
-                    els.resultBody.appendChild(tr);
-                }
-            });
-            els.resultCount.textContent = totalRows + " 行";
-            els.resultPanel.style.display = "block";
-        }
-
-        /* ===== Payload ===== */
-
-        function buildPayload(uploadFileBase64) {
-            const cumForward = document.getElementById("cumForward").checked;
-            const cumBackward = document.getElementById("cumBackward").checked;
-            const cumAll = document.getElementById("cumAll").checked;
-            const longestBit1 = document.getElementById("longestBit1").checked;
-            const longestBit0 = document.getElementById("longestBit0").checked;
-            const longestAll = document.getElementById("longestAll").checked;
-            return {
-                uploadFile: uploadFileBase64,
-                frequencyTest: document.getElementById("frequencyTest").checked,
-                blockFrequencyTest: {
-                    enable: document.getElementById("blockFrequencyEnable").checked,
-                    m: toInt(document.getElementById("blockM").value, 128)
-                },
-                cumulativeSumsTest: {
-                    enable: document.getElementById("cumulativeEnable").checked,
-                    isForward: cumAll ? null : (cumForward && !cumBackward ? true : (cumBackward && !cumForward ? false : null))
-                },
-                runsTest: document.getElementById("runsTest").checked,
-                longestRunOfOnesTest: {
-                    enable: document.getElementById("longestEnable").checked,
-                    checkOne: longestAll ? null : (longestBit1 && !longestBit0 ? true : (longestBit0 && !longestBit1 ? false : null))
-                },
-                rankTest: {
-                    enable: document.getElementById("rankEnable").checked,
-                    r: toInt(document.getElementById("rankR").value, 32),
-                    c: toInt(document.getElementById("rankC").value, 32)
-                },
-                discreteFourierTransformTest: document.getElementById("dftTest").checked,
-                nonOverlappingTemplateMatchingTest: {
-                    enable: document.getElementById("nonOverlapEnable").checked,
-                    n: toInt(document.getElementById("nonOverlapN").value, 1000000),
-                    m: toInt(document.getElementById("nonOverlapM").value, 9)
-                },
-                overlappingTemplateMatchingTest: {
-                    enable: document.getElementById("overlapEnable").checked,
-                    n: toInt(document.getElementById("overlapN").value, 1000000),
-                    m: toInt(document.getElementById("overlapM").value, 9)
-                },
-                universalTest: document.getElementById("universalTest").checked,
-                approximateEntropyTest: {
-                    enable: document.getElementById("approxEnable").checked,
-                    m: toInt(document.getElementById("approxM").value, 2)
-                },
-                randomExcursionsTest: {
-                    enable: document.getElementById("randomExcEnable").checked,
-                    n: toInt(document.getElementById("randomExcN").value, 1000000)
-                },
-                randomExcursionsVariantTest: {
-                    enable: document.getElementById("randomExcVEnable").checked,
-                    n: toInt(document.getElementById("randomExcVN").value, 1000000)
-                },
-                serialTest: {
-                    enable: document.getElementById("serialEnable").checked,
-                    m: toInt(document.getElementById("serialM").value, 16)
-                },
-                linearComplexityTest: {
-                    enable: document.getElementById("linearEnable").checked,
-                    m: toInt(document.getElementById("linearM").value, 500)
-                },
-                pokerTest: {
-                    enable: document.getElementById("pokerEnable").checked,
-                    m: toInt(document.getElementById("pokerM").value, 4)
-                },
-                runsDistributionTest: document.getElementById("runsDistributionTest").checked,
-                binaryDerivativeTest: {
-                    enable: document.getElementById("binaryEnable").checked,
-                    k: toInt(document.getElementById("binaryK").value, 3)
-                },
-                autocorrelationTest: {
-                    enable: document.getElementById("autoEnable").checked,
-                    d: toInt(document.getElementById("autoD").value, 1)
-                }
-            };
-        }
-
-        /* ===== Test execution ===== */
-
-        async function runTest() {
-            clearStatus();
-            const check = validateSelectedFile();
-            if (!check.ok) {
-                showStatus("error", check.message);
-                return;
-            }
-            els.resultPanel.style.display = "none";
-            els.loading.style.display = "inline-flex";
-            els.runBtn.disabled = true;
-            try {
-                const base64Data = await readFileAsBase64(check.file);
-                const payload = buildPayload(base64Data);
-                const apiUrl = getApiUrl();
-                const resp = await fetch(apiUrl, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify(payload)
-                });
-                const raw = await resp.text();
-                if (!raw) {
-                    if (resp.status === 405) {
-                        throw new Error("接口返回 405。当前地址很可能不是测试后端，请将测试地址设为 http://127.0.0.1:8888。");
-                    }
-                    throw new Error("服务端返回空响应，请检查后端日志。URL=" + apiUrl + "，HTTP=" + resp.status);
-                }
-                let body;
-                try {
-                    body = JSON.parse(raw);
-                } catch (parseErr) {
-                    throw new Error("服务端返回了非 JSON 内容，请确认测试地址。URL=" + apiUrl + "，响应片段=" + raw.slice(0, 120));
-                }
-                if (!resp.ok) {
-                    throw new Error((body && body.msg) ? body.msg : ("HTTP " + resp.status + " 请求失败。"));
-                }
-                if (!body || body.code !== 200) {
-                    throw new Error((body && body.msg) ? body.msg : "服务端返回错误");
-                }
-                const results = body.data && Array.isArray(body.data.result) ? body.data.result : [];
-                renderResults(results);
-                showStatus("success", "测试完成，共返回 " + results.length + " 项结果。");
-            } catch (err) {
-                const msg = (err && err.message) ? err.message : "测试失败";
-                if (msg.toLowerCase().includes("failed to fetch")) {
-                    showStatus("error", "请求失败，请确认测试后端已启动并可访问: " + getApiUrl());
-                } else {
-                    showStatus("error", msg);
-                }
-            } finally {
-                els.loading.style.display = "none";
-                els.runBtn.disabled = false;
-            }
-        }
-
-        /* ===== Event bindings ===== */
-
-        function bindOptionToggle() {
-            document.querySelectorAll("input[data-param-target]").forEach(input => {
-                const targetId = input.getAttribute("data-param-target");
-                const panel = document.getElementById(targetId);
-                const refresh = () => {
-                    if (!panel) {
-                        return;
-                    }
-                    panel.classList.toggle("show", input.checked);
-                };
-                input.addEventListener("change", refresh);
-                refresh();
-            });
-        }
-
-        function bindTestLevelToggle() {
-            document.querySelectorAll("input[name='testLevel']").forEach(input => {
-                input.addEventListener("change", syncTestLevelMode);
-            });
-        }
-
-        function bindUploadUX() {
-            document.addEventListener("dragover", e => e.preventDefault());
-            document.addEventListener("drop", e => e.preventDefault());
-
-            els.pickBtn.addEventListener("click", () => {
-                els.fileInput.click();
-            });
-
-            els.fileInput.addEventListener("change", updateFileMeta);
-
-            ["dragenter", "dragover"].forEach(type => {
-                els.uploadBox.addEventListener(type, e => {
-                    e.preventDefault();
-                    els.uploadBox.classList.add("dragging");
-                });
-            });
-
-            ["dragleave", "drop"].forEach(type => {
-                els.uploadBox.addEventListener(type, e => {
-                    e.preventDefault();
-                    els.uploadBox.classList.remove("dragging");
-                });
-            });
-
-            els.uploadBox.addEventListener("drop", e => {
-                const files = e.dataTransfer && e.dataTransfer.files;
-                if (!files || files.length === 0) {
-                    return;
-                }
-                if (files.length > 1) {
-                    showStatus("error", "每次只能拖入 1 个文件。");
-                    return;
-                }
-                const dt = new DataTransfer();
-                dt.items.add(files[0]);
-                els.fileInput.files = dt.files;
-                updateFileMeta();
-            });
-        }
-
-        function bindAllSelectToggle(allId, itemIds) {
-            const allIds = [allId, ...itemIds];
-            const cbs = allIds.map(id => document.getElementById(id)).filter(Boolean);
-            cbs.forEach(cb => {
-                cb.addEventListener("change", () => {
-                    if (cb.checked) {
-                        cbs.forEach(other => {
-                            if (other !== cb) {
-                                other.checked = false;
-                            }
-                        });
-                    }
-                });
-            });
-        }
-
-        /* ===== Init ===== */
-
-        function init() {
-            const savedApiOrigin = normalizeApiOrigin(localStorage.getItem(API_ORIGIN_STORAGE_KEY));
-            els.apiOriginInput.value = savedApiOrigin || (window.location.port === "8888" ? window.location.origin : DEFAULT_API_ORIGIN);
-
-            els.saveApiBtn.addEventListener("click", () => {
-                const normalized = normalizeApiOrigin(els.apiOriginInput.value);
-                if (!normalized) {
-                    localStorage.removeItem(API_ORIGIN_STORAGE_KEY);
-                    showStatus("success", "已清除自定义测试地址。当前默认: " + resolveApiOrigin());
-                    return;
-                }
-                localStorage.setItem(API_ORIGIN_STORAGE_KEY, normalized);
-                showStatus("success", "测试地址已更新: " + normalized);
-            });
-
-            bindOptionToggle();
-            bindTestLevelToggle();
-            syncTestLevelMode();
-            document.getElementById("cumAll").checked = true;
-            document.getElementById("longestAll").checked = true;
-            refreshParamPanels();
-            bindUploadUX();
-            bindAllSelectToggle("cumAll", ["cumForward", "cumBackward"]);
-            bindAllSelectToggle("longestAll", ["longestBit1", "longestBit0"]);
-            els.runBtn.addEventListener("click", runTest);
-        }
-
-        init();
-    </script>
+	<main class="page">
+		<section class="hero">
+			<div>
+				<h1>随机数检测 Web 控制台 <span class="version">V1.0.1</span></h1>
+				<p>用于 NIST/GM 标准下的 2 级（1000000 bits）随机性检测测试执行与结果查看。支持自定义测试</p>
+				<p>技术栈：HTML + CSS + JavaScript + Gin + Go</p>
+			</div>
+			<div class="chip">仅支持单个 1,000,000 bits 文件</div>
+		</section>
+
+		<section class="grid">
+			<article class="panel">
+				<h2>输入与执行</h2>
+				<div class="upload-box" id="uploadBox">
+					<div class="api-row">
+						<input id="apiOriginInput" type="text" placeholder="测试地址，例如 http://127.0.0.1:8888">
+						<button class="btn ghost" id="saveApiBtn" type="button">更新测试地址</button>
+					</div>
+					<div class="mode-row">
+						<label><input type="radio" name="testLevel" value="custom" checked>自定义</label>
+						<label><input type="radio" name="testLevel" value="nist2">NIST-Level 2</label>
+						<label><input type="radio" name="testLevel" value="gm2">GM-Level 2</label>
+					</div>
+					<div class="row">
+						<button class="btn ghost" id="pickBtn" type="button">选择文件</button>
+						<button class="btn primary" id="runBtn" type="button">开始测试</button>
+						<button class="btn stop" id="stopBtn" type="button" style="display:none;">停止测试</button>
+						<div class="loading" id="loading"><span class="dot"></span>正在提交并等待结果...</div>
+					</div>
+					<input id="fileInput" type="file" accept=".bin,.dat,.txt,.raw" hidden>
+					<div class="file-meta" id="fileMeta"></div>
+					<div class="status" id="statusBox"></div>
+				</div>
+			</article>
+
+			<article class="panel">
+				<h2>测试项配置</h2>
+				<div class="options" id="optionsRoot">
+					<div class="option">
+						<label><input type="checkbox" id="frequencyTest" checked>FrequencyTest（单比特频数检测）</label>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="blockFrequencyParams" id="blockFrequencyEnable"
+								checked>BlockFrequencyTest（块内频数检测）</label>
+						<div class="params show" id="blockFrequencyParams">
+							<div class="param-field"><span class="param-label">M</span><input type="number" id="blockM"
+									value="128" min="1" step="1"></div>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="cumulativeParams" id="cumulativeEnable"
+								checked>CumulativeSumsTest（累积和检测）</label>
+						<div class="params show row" id="cumulativeParams">
+							<label><input type="checkbox" id="cumForward">前向</label>
+							<label><input type="checkbox" id="cumBackward">后向</label>
+							<label><input type="checkbox" id="cumAll" checked>全选</label>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" id="runsTest" checked>RunsTest（游程检测）</label>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="longestParams" id="longestEnable"
+								checked>LongestRunOfOnesTest（块内最大游程检测）</label>
+						<div class="params show row" id="longestParams">
+							<label><input type="checkbox" id="longestBit1">比特 1</label>
+							<label><input type="checkbox" id="longestBit0">比特 0</label>
+							<label><input type="checkbox" id="longestAll" checked>全选</label>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="rankParams" id="rankEnable"
+								checked>RankTest（矩阵秩检测）</label>
+						<div class="params show" id="rankParams">
+							<div class="param-field"><span class="param-label">R</span><input type="number" id="rankR"
+									value="32" min="1" step="1"></div>
+							<div class="param-field"><span class="param-label">C</span><input type="number" id="rankC"
+									value="32" min="1" step="1"></div>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" id="dftTest" checked>DiscreteFourierTransformTest（离散傅里叶检测）</label>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="nonOverlapParams"
+								id="nonOverlapEnable">NonOverlappingTemplateMatchingTest（非重叠模板匹配）</label>
+						<div class="params show" id="nonOverlapParams">
+							<div class="param-field"><span class="param-label">n</span><input type="number"
+									id="nonOverlapN" value="1000000" min="1" step="1"></div>
+							<div class="param-field"><span class="param-label">m</span><input type="number"
+									id="nonOverlapM" value="9" min="1" step="1"></div>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="overlapParams"
+								id="overlapEnable">OverlappingTemplateMatchingTest（重叠模板匹配）</label>
+						<div class="params show" id="overlapParams">
+							<div class="param-field"><span class="param-label">n</span><input type="number"
+									id="overlapN" value="1000000" min="1" step="1"></div>
+							<div class="param-field"><span class="param-label">m</span><input type="number"
+									id="overlapM" value="9" min="1" step="1"></div>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" id="universalTest" checked>UniversalTest（通用统计检测）</label>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="approxParams" id="approxEnable"
+								checked>ApproximateEntropyTest（近似熵检测）</label>
+						<div class="params show" id="approxParams">
+							<div class="param-field"><span class="param-label">m</span><input type="number" id="approxM"
+									value="2" min="1" step="1"></div>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="randomExcParams"
+								id="randomExcEnable">RandomExcursionsTest（随机游走检测）</label>
+						<div class="params show" id="randomExcParams">
+							<div class="param-field"><span class="param-label">N</span><input type="number"
+									id="randomExcN" value="1000000" min="1" step="1"></div>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="randomExcVParams"
+								id="randomExcVEnable">RandomExcursionsVariantTest（随机游走变版检测）</label>
+						<div class="params show" id="randomExcVParams">
+							<div class="param-field"><span class="param-label">N</span><input type="number"
+									id="randomExcVN" value="1000000" min="1" step="1"></div>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="serialParams" id="serialEnable"
+								checked>SerialTest（序列检测）</label>
+						<div class="params show" id="serialParams">
+							<div class="param-field"><span class="param-label">m</span><input type="number" id="serialM"
+									value="16" min="1" step="1"></div>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="linearParams" id="linearEnable"
+								checked>LinearComplexityTest（线性复杂度检测）</label>
+						<div class="params show" id="linearParams">
+							<div class="param-field"><span class="param-label">M</span><input type="number" id="linearM"
+									value="500" min="1" step="1"></div>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="pokerParams" id="pokerEnable"
+								checked>PokerTest（扑克检测）</label>
+						<div class="params show" id="pokerParams">
+							<div class="param-field"><span class="param-label">m</span><input type="number" id="pokerM"
+									value="4" min="1" step="1"></div>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" id="runsDistributionTest"
+								checked>RunsDistributionTest（游程分布检测）</label>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="binaryParams" id="binaryEnable"
+								checked>BinaryDerivativeTest（二元导数检测）</label>
+						<div class="params show" id="binaryParams">
+							<div class="param-field"><span class="param-label">k</span><input type="number" id="binaryK"
+									value="3" min="1" step="1"></div>
+						</div>
+					</div>
+
+					<div class="option">
+						<label><input type="checkbox" data-param-target="autoParams" id="autoEnable"
+								checked>AutocorrelationTest（自相关检测）</label>
+						<div class="params show" id="autoParams">
+							<div class="param-field"><span class="param-label">d</span><input type="number" id="autoD"
+									value="1" min="1" step="1"></div>
+						</div>
+					</div>
+				</div>
+			</article>
+		</section>
+
+		<section class="result-panel" id="resultPanel">
+			<div class="result-header">
+				<h2>测试结果</h2>
+				<div class="chip" id="resultCount">0 项</div>
+			</div>
+			<div class="table-wrap">
+				<table>
+					<thead>
+						<tr>
+							<th>测试项名称</th>
+							<th>P1 Value</th>
+							<th>P2 Value</th>
+							<th>PValue 是否通过</th>
+							<th>Q1 Value</th>
+							<th>Q2 Value</th>
+							<th>QValue 是否通过</th>
+							<th>测试结果</th>
+						</tr>
+					</thead>
+					<tbody id="resultBody"></tbody>
+				</table>
+			</div>
+		</section>
+	</main>
+
+	<script>
+		/* ===== Constants ===== */
+
+		const REQUIRED_SIZE_BYTES = 125000;
+		const DEFAULT_API_ORIGIN = "http://127.0.0.1:8888";
+		const API_ORIGIN_STORAGE_KEY = "randomtest_api_origin";
+		const API_PATH_CUSTOM = "/api/v1/randomtest/handleRandomTestHTTPRequest";
+		const API_PATH_NIST_LEVEL2 = "/api/v1/randomtest/handleRandomTestHTTPRequestNISTLevel2";
+		const API_PATH_GM_LEVEL2 = "/api/v1/randomtest/handleRandomTestHTTPRequestGMLevel2";
+
+		const TEST_NAME_ORDER = [
+			"FrequencyTest",
+			"BlockFrequencyTest",
+			"CumulativeSumsTest",
+			"RunsTest",
+			"LongestRunOfOnesTest",
+			"RankTest",
+			"DiscreteFourierTransformTest",
+			"NonOverlappingTemplateMatchingTest",
+			"OverlappingTemplateMatchingTest",
+			"UniversalTest",
+			"ApproximateEntropyTest",
+			"RandomExcursionsTest",
+			"RandomExcursionsVariantTest",
+			"SerialTest",
+			"LinearComplexityTest",
+			"PokerTest",
+			"RunsDistributionTest",
+			"BinaryDerivativeTest",
+			"AutocorrelationTest"
+		];
+
+		const TEST_NAME_ZH_MAP = {
+			FrequencyTest: "单比特频数检测",
+			BlockFrequencyTest: "块内频数检测",
+			CumulativeSumsTest: "累积和检测",
+			RunsTest: "游程检测",
+			LongestRunOfOnesTest: "块内最大游程检测",
+			RankTest: "矩阵秩检测",
+			DiscreteFourierTransformTest: "离散傅里叶检测",
+			NonOverlappingTemplateMatchingTest: "非重叠模板匹配",
+			OverlappingTemplateMatchingTest: "重叠模板匹配",
+			UniversalTest: "通用统计检测",
+			ApproximateEntropyTest: "近似熵检测",
+			RandomExcursionsTest: "随机游走检测",
+			RandomExcursionsVariantTest: "随机游走变版检测",
+			SerialTest: "序列检测",
+			LinearComplexityTest: "线性复杂度检测",
+			PokerTest: "扑克检测",
+			RunsDistributionTest: "游程分布检测",
+			BinaryDerivativeTest: "二元导数检测",
+			AutocorrelationTest: "自相关检测"
+		};
+
+		/* ===== Elements ===== */
+
+		const els = {
+			fileInput: document.getElementById("fileInput"),
+			pickBtn: document.getElementById("pickBtn"),
+			runBtn: document.getElementById("runBtn"),
+			stopBtn: document.getElementById("stopBtn"),
+			apiOriginInput: document.getElementById("apiOriginInput"),
+			saveApiBtn: document.getElementById("saveApiBtn"),
+			fileMeta: document.getElementById("fileMeta"),
+			statusBox: document.getElementById("statusBox"),
+			loading: document.getElementById("loading"),
+			uploadBox: document.getElementById("uploadBox"),
+			resultPanel: document.getElementById("resultPanel"),
+			resultBody: document.getElementById("resultBody"),
+			resultCount: document.getElementById("resultCount")
+		};
+
+		/* ===== Utility functions ===== */
+
+		function normalizeApiOrigin(origin) {
+			if (!origin) {
+				return "";
+			}
+			return String(origin).trim().replace(/\/$/, "");
+		}
+
+		function resolveApiOrigin() {
+			const byInput = normalizeApiOrigin(els.apiOriginInput ? els.apiOriginInput.value : "");
+			if (byInput) {
+				return byInput;
+			}
+			const byStorage = normalizeApiOrigin(localStorage.getItem(API_ORIGIN_STORAGE_KEY));
+			if (byStorage) {
+				return byStorage;
+			}
+			if (window.location.port === "8888") {
+				return window.location.origin;
+			}
+			return DEFAULT_API_ORIGIN;
+		}
+
+		function toInt(value, fallback) {
+			const parsed = Number.parseInt(value, 10);
+			return Number.isNaN(parsed) ? fallback : parsed;
+		}
+
+		function getApiUrl() {
+			const selectedLevel = document.querySelector("input[name='testLevel']:checked");
+			const level = selectedLevel ? selectedLevel.value : "nist2";
+			let apiPath = API_PATH_NIST_LEVEL2;
+			if (level === "gm2") {
+				apiPath = API_PATH_GM_LEVEL2;
+			} else if (level === "custom") {
+				apiPath = API_PATH_CUSTOM;
+			}
+			return resolveApiOrigin() + apiPath;
+		}
+
+		function getTestLevel() {
+			const selectedLevel = document.querySelector("input[name='testLevel']:checked");
+			return selectedLevel ? selectedLevel.value : "nist2";
+		}
+
+		function showStatus(type, message) {
+			els.statusBox.className = "status " + type;
+			els.statusBox.textContent = message;
+			els.statusBox.style.display = "block";
+		}
+
+		function clearStatus() {
+			els.statusBox.style.display = "none";
+			els.statusBox.textContent = "";
+			els.statusBox.className = "status";
+		}
+
+		function formatValue(value) {
+			if (Array.isArray(value)) {
+				if (value.length === 0) {
+					return "-";
+				}
+				return value.map(v => Number(v).toFixed(6)).join(", ");
+			}
+			if (value === null || typeof value === "undefined") {
+				return "-";
+			}
+			const num = Number(value);
+			if (Number.isFinite(num)) {
+				return num.toFixed(6);
+			}
+			return String(value);
+		}
+
+		function formatPassStatus(value) {
+			if (typeof value !== "boolean") {
+				return "-";
+			}
+			return value ? "✅" : "❌";
+		}
+
+		function checkValuePass(value) {
+			if (Array.isArray(value)) {
+				if (value.length === 0) {
+					return false;
+				}
+				return value.every(v => Number(v) >= 0.01);
+			}
+			if (value === null || typeof value === "undefined") {
+				return false;
+			}
+			const num = Number(value);
+			if (!Number.isFinite(num)) {
+				return false;
+			}
+			return num >= 0.01;
+		}
+
+		function normalizeTestName(name) {
+			const raw = String(name || "").replace(/\s+/g, "");
+			if (!raw) {
+				return "";
+			}
+			if (TEST_NAME_ZH_MAP[raw]) {
+				return raw;
+			}
+			const lowered = raw.toLowerCase();
+			const matched = TEST_NAME_ORDER.find(item => item.toLowerCase() === lowered);
+			return matched || raw;
+		}
+
+		function formatTestTitle(name) {
+			const normalized = normalizeTestName(name);
+			const zhName = TEST_NAME_ZH_MAP[normalized];
+			if (!zhName) {
+				return normalized || "-";
+			}
+			return normalized + "（" + zhName + "）";
+		}
+
+		function readFileAsBase64(file) {
+			return new Promise((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onload = () => {
+					const dataUrl = String(reader.result || "");
+					const parts = dataUrl.split(",");
+					if (parts.length < 2) {
+						reject(new Error("文件编码失败，无法提取 Base64 数据。"));
+						return;
+					}
+					resolve(parts[1]);
+				};
+				reader.onerror = () => reject(new Error("文件读取失败。"));
+				reader.readAsDataURL(file);
+			});
+		}
+
+		/* ===== File validation ===== */
+
+		function validateSelectedFile() {
+			const files = els.fileInput.files;
+			if (!files || files.length !== 1) {
+				return { ok: false, message: "每次必须且只能选择 1 个文件。" };
+			}
+			const file = files[0];
+			if (file.size !== REQUIRED_SIZE_BYTES) {
+				return {
+					ok: false,
+					message: "文件大小必须严格为 125000 字节（1000000 bit），当前为 " + file.size + " 字节。"
+				};
+			}
+			return { ok: true, file };
+		}
+
+		function updateFileMeta() {
+			const check = validateSelectedFile();
+			if (!els.fileInput.files || els.fileInput.files.length === 0) {
+				els.fileMeta.style.display = "none";
+				return;
+			}
+			const file = els.fileInput.files[0];
+			const exactBits = file.size * 8;
+			els.fileMeta.innerHTML = [
+				"文件名: <span class=\"mono\">" + file.name + "</span>",
+				"大小: <span class=\"mono\">" + file.size + " bytes / " + exactBits + " bit</span>",
+				"校验: <span class=\"mono\">" + (check.ok ? "PASS" : "FAIL") + "</span>"
+			].join("<br>");
+			els.fileMeta.style.display = "block";
+			if (!check.ok) {
+				showStatus("error", check.message);
+			} else {
+				showStatus("success", "文件校验通过，可执行测试。");
+			}
+		}
+
+		/* ===== Config management ===== */
+
+		function clearAllTestSelections() {
+			const optionsRoot = document.getElementById("optionsRoot");
+			if (!optionsRoot) {
+				return;
+			}
+			optionsRoot.querySelectorAll("input[type='checkbox']").forEach(input => {
+				input.checked = false;
+			});
+		}
+
+		function clearTestRecordsAndResults() {
+			els.fileInput.value = "";
+			els.fileMeta.innerHTML = "";
+			els.fileMeta.style.display = "none";
+			clearStatus();
+			els.resultBody.innerHTML = "";
+			els.resultCount.textContent = "0 项";
+			els.resultPanel.style.display = "none";
+			setTestRunning(false);
+		}
+
+		function refreshParamPanels() {
+			document.querySelectorAll("input[data-param-target]").forEach(input => {
+				const targetId = input.getAttribute("data-param-target");
+				const panel = document.getElementById(targetId);
+				if (!panel) {
+					return;
+				}
+				panel.classList.toggle("show", input.checked);
+			});
+		}
+
+		function setConfigReadOnly(readOnly) {
+			const optionsRoot = document.getElementById("optionsRoot");
+			if (!optionsRoot) {
+				return;
+			}
+			optionsRoot.classList.toggle("readonly", readOnly);
+			optionsRoot.querySelectorAll("input, select, textarea, button").forEach(input => {
+				input.disabled = readOnly;
+			});
+		}
+
+		function syncTestLevelMode() {
+			const level = getTestLevel();
+			const isCustom = level === "custom";
+			clearAllTestSelections();
+			clearTestRecordsAndResults();
+			setConfigReadOnly(!isCustom);
+			refreshParamPanels();
+		}
+
+		/* ===== Results rendering ===== */
+
+		function renderResults(results) {
+			els.resultBody.innerHTML = "";
+			let totalRows = 0;
+			results.forEach(item => {
+				const p1Arr = Array.isArray(item.P1Value) ? item.P1Value : null;
+				const p2Arr = Array.isArray(item.P2Value) ? item.P2Value : null;
+				const q1Arr = Array.isArray(item.Q1Value) ? item.Q1Value : null;
+				const q2Arr = Array.isArray(item.Q2Value) ? item.Q2Value : null;
+				const rowCnt = Math.max(
+					p1Arr ? p1Arr.length : 1,
+					p2Arr ? p2Arr.length : 1,
+					q1Arr ? q1Arr.length : 1,
+					q2Arr ? q2Arr.length : 1
+				);
+				totalRows += rowCnt;
+				for (let i = 0; i < rowCnt; i++) {
+					const p1v = p1Arr ? p1Arr[i] : item.P1Value;
+					const p2v = p2Arr ? p2Arr[i] : item.P2Value;
+					const q1v = q1Arr ? q1Arr[i] : item.Q1Value;
+					const q2v = q2Arr ? q2Arr[i] : item.Q2Value;
+					const passed = checkValuePass(p1v);
+					const resultText = passed ? "通过" : "不通过";
+					const tr = document.createElement("tr");
+					const nameLabel = i === 0 ? (normalizeTestName(item.TestFuncName) || "-") : "";
+					tr.innerHTML = [
+						"<td class=\"mono\">" + nameLabel + "</td>",
+						"<td class=\"mono\">" + formatValue(p1v) + "</td>",
+						"<td class=\"mono\">" + formatValue(p2v) + "</td>",
+						"<td class=\"pass-cell\">" + formatPassStatus(passed) + "</td>",
+						"<td class=\"mono\">" + formatValue(q1v) + "</td>",
+						"<td class=\"mono\">" + formatValue(q2v) + "</td>",
+						"<td class=\"pass-cell\">" + formatPassStatus(passed) + "</td>",
+						"<td>" + resultText + "</td>"
+					].join("");
+					els.resultBody.appendChild(tr);
+				}
+			});
+			els.resultCount.textContent = totalRows + " 行";
+			els.resultPanel.style.display = "block";
+		}
+
+		/* ===== Payload ===== */
+
+		function buildPayload(uploadFileBase64) {
+			const cumForward = document.getElementById("cumForward").checked;
+			const cumBackward = document.getElementById("cumBackward").checked;
+			const cumAll = document.getElementById("cumAll").checked;
+			const longestBit1 = document.getElementById("longestBit1").checked;
+			const longestBit0 = document.getElementById("longestBit0").checked;
+			const longestAll = document.getElementById("longestAll").checked;
+			return {
+				uploadFile: uploadFileBase64,
+				frequencyTest: document.getElementById("frequencyTest").checked,
+				blockFrequencyTest: {
+					enable: document.getElementById("blockFrequencyEnable").checked,
+					m: toInt(document.getElementById("blockM").value, 128)
+				},
+				cumulativeSumsTest: {
+					enable: document.getElementById("cumulativeEnable").checked,
+					isForward: cumAll ? null : (cumForward && !cumBackward ? true : (cumBackward && !cumForward ? false : null))
+				},
+				runsTest: document.getElementById("runsTest").checked,
+				longestRunOfOnesTest: {
+					enable: document.getElementById("longestEnable").checked,
+					checkOne: longestAll ? null : (longestBit1 && !longestBit0 ? true : (longestBit0 && !longestBit1 ? false : null))
+				},
+				rankTest: {
+					enable: document.getElementById("rankEnable").checked,
+					r: toInt(document.getElementById("rankR").value, 32),
+					c: toInt(document.getElementById("rankC").value, 32)
+				},
+				discreteFourierTransformTest: document.getElementById("dftTest").checked,
+				nonOverlappingTemplateMatchingTest: {
+					enable: document.getElementById("nonOverlapEnable").checked,
+					n: toInt(document.getElementById("nonOverlapN").value, 1000000),
+					m: toInt(document.getElementById("nonOverlapM").value, 9)
+				},
+				overlappingTemplateMatchingTest: {
+					enable: document.getElementById("overlapEnable").checked,
+					n: toInt(document.getElementById("overlapN").value, 1000000),
+					m: toInt(document.getElementById("overlapM").value, 9)
+				},
+				universalTest: document.getElementById("universalTest").checked,
+				approximateEntropyTest: {
+					enable: document.getElementById("approxEnable").checked,
+					m: toInt(document.getElementById("approxM").value, 2)
+				},
+				randomExcursionsTest: {
+					enable: document.getElementById("randomExcEnable").checked,
+					n: toInt(document.getElementById("randomExcN").value, 1000000)
+				},
+				randomExcursionsVariantTest: {
+					enable: document.getElementById("randomExcVEnable").checked,
+					n: toInt(document.getElementById("randomExcVN").value, 1000000)
+				},
+				serialTest: {
+					enable: document.getElementById("serialEnable").checked,
+					m: toInt(document.getElementById("serialM").value, 16)
+				},
+				linearComplexityTest: {
+					enable: document.getElementById("linearEnable").checked,
+					m: toInt(document.getElementById("linearM").value, 500)
+				},
+				pokerTest: {
+					enable: document.getElementById("pokerEnable").checked,
+					m: toInt(document.getElementById("pokerM").value, 4)
+				},
+				runsDistributionTest: document.getElementById("runsDistributionTest").checked,
+				binaryDerivativeTest: {
+					enable: document.getElementById("binaryEnable").checked,
+					k: toInt(document.getElementById("binaryK").value, 3)
+				},
+				autocorrelationTest: {
+					enable: document.getElementById("autoEnable").checked,
+					d: toInt(document.getElementById("autoD").value, 1)
+				}
+			};
+		}
+
+		/* ===== Test execution ===== */
+
+		let currentAbortController = null;
+
+		function setTestRunning(running) {
+			els.runBtn.style.display = running ? "none" : "";
+			els.stopBtn.style.display = running ? "" : "none";
+			els.runBtn.disabled = running;
+			els.loading.style.display = running ? "inline-flex" : "none";
+		}
+
+		function stopTest() {
+			if (currentAbortController) {
+				currentAbortController.abort();
+				currentAbortController = null;
+			}
+			setTestRunning(false);
+			showStatus("error", "测试已由用户取消。");
+		}
+
+		async function runTest() {
+			clearStatus();
+			const check = validateSelectedFile();
+			if (!check.ok) {
+				showStatus("error", check.message);
+				return;
+			}
+			els.resultPanel.style.display = "none";
+			setTestRunning(true);
+			currentAbortController = new AbortController();
+			try {
+				const base64Data = await readFileAsBase64(check.file);
+				const payload = buildPayload(base64Data);
+				const apiUrl = getApiUrl();
+				const resp = await fetch(apiUrl, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json"
+					},
+					body: JSON.stringify(payload),
+					signal: currentAbortController.signal
+				});
+				const raw = await resp.text();
+				if (!raw) {
+					if (resp.status === 405) {
+						throw new Error("接口返回 405。当前地址很可能不是测试后端，请将测试地址设为 http://127.0.0.1:8888。");
+					}
+					throw new Error("服务端返回空响应，请检查后端日志。URL=" + apiUrl + "，HTTP=" + resp.status);
+				}
+				let body;
+				try {
+					body = JSON.parse(raw);
+				} catch (parseErr) {
+					throw new Error("服务端返回了非 JSON 内容，请确认测试地址。URL=" + apiUrl + "，响应片段=" + raw.slice(0, 120));
+				}
+				if (!resp.ok) {
+					throw new Error((body && body.msg) ? body.msg : ("HTTP " + resp.status + " 请求失败。"));
+				}
+				if (!body || body.code !== 200) {
+					throw new Error((body && body.msg) ? body.msg : "服务端返回错误");
+				}
+				const results = body.data && Array.isArray(body.data.result) ? body.data.result : [];
+				renderResults(results);
+				showStatus("success", "测试完成，共返回 " + results.length + " 项结果。");
+			} catch (err) {
+				const msg = (err && err.message) ? err.message : "测试失败";
+				if (err.name === "AbortError") {
+					showStatus("error", "测试已由用户取消。");
+				} else if (msg.toLowerCase().includes("failed to fetch")) {
+					showStatus("error", "请求失败，请确认测试后端已启动并可访问: " + getApiUrl());
+				} else {
+					showStatus("error", msg);
+				}
+			} finally {
+				currentAbortController = null;
+				setTestRunning(false);
+			}
+		}
+
+		/* ===== Event bindings ===== */
+
+		function bindOptionToggle() {
+			document.querySelectorAll("input[data-param-target]").forEach(input => {
+				const targetId = input.getAttribute("data-param-target");
+				const panel = document.getElementById(targetId);
+				const refresh = () => {
+					if (!panel) {
+						return;
+					}
+					panel.classList.toggle("show", input.checked);
+				};
+				input.addEventListener("change", refresh);
+				refresh();
+			});
+		}
+
+		function bindTestLevelToggle() {
+			document.querySelectorAll("input[name='testLevel']").forEach(input => {
+				input.addEventListener("change", syncTestLevelMode);
+			});
+		}
+
+		function bindUploadUX() {
+			document.addEventListener("dragover", e => e.preventDefault());
+			document.addEventListener("drop", e => e.preventDefault());
+
+			els.pickBtn.addEventListener("click", () => {
+				els.fileInput.click();
+			});
+
+			els.fileInput.addEventListener("change", updateFileMeta);
+
+			["dragenter", "dragover"].forEach(type => {
+				els.uploadBox.addEventListener(type, e => {
+					e.preventDefault();
+					els.uploadBox.classList.add("dragging");
+				});
+			});
+
+			["dragleave", "drop"].forEach(type => {
+				els.uploadBox.addEventListener(type, e => {
+					e.preventDefault();
+					els.uploadBox.classList.remove("dragging");
+				});
+			});
+
+			els.uploadBox.addEventListener("drop", e => {
+				const files = e.dataTransfer && e.dataTransfer.files;
+				if (!files || files.length === 0) {
+					return;
+				}
+				if (files.length > 1) {
+					showStatus("error", "每次只能拖入 1 个文件。");
+					return;
+				}
+				const dt = new DataTransfer();
+				dt.items.add(files[0]);
+				els.fileInput.files = dt.files;
+				updateFileMeta();
+			});
+		}
+
+		function bindAllSelectToggle(allId, itemIds) {
+			const allIds = [allId, ...itemIds];
+			const cbs = allIds.map(id => document.getElementById(id)).filter(Boolean);
+			cbs.forEach(cb => {
+				cb.addEventListener("change", () => {
+					if (cb.checked) {
+						cbs.forEach(other => {
+							if (other !== cb) {
+								other.checked = false;
+							}
+						});
+					}
+				});
+			});
+		}
+
+		/* ===== Init ===== */
+
+		function init() {
+			const savedApiOrigin = normalizeApiOrigin(localStorage.getItem(API_ORIGIN_STORAGE_KEY));
+			els.apiOriginInput.value = savedApiOrigin || (window.location.port === "8888" ? window.location.origin : DEFAULT_API_ORIGIN);
+
+			els.saveApiBtn.addEventListener("click", () => {
+				const normalized = normalizeApiOrigin(els.apiOriginInput.value);
+				if (!normalized) {
+					localStorage.removeItem(API_ORIGIN_STORAGE_KEY);
+					showStatus("success", "已清除自定义测试地址。当前默认: " + resolveApiOrigin());
+					return;
+				}
+				localStorage.setItem(API_ORIGIN_STORAGE_KEY, normalized);
+				showStatus("success", "测试地址已更新: " + normalized);
+			});
+
+			bindOptionToggle();
+			bindTestLevelToggle();
+			syncTestLevelMode();
+			document.getElementById("cumAll").checked = true;
+			document.getElementById("longestAll").checked = true;
+			refreshParamPanels();
+			bindUploadUX();
+			bindAllSelectToggle("cumAll", ["cumForward", "cumBackward"]);
+			bindAllSelectToggle("longestAll", ["longestBit1", "longestBit0"]);
+			els.runBtn.addEventListener("click", runTest);
+			els.stopBtn.addEventListener("click", stopTest);
+		}
+
+		init();
+	</script>
 </body>
+
 </html>
