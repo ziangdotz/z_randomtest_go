@@ -1,71 +1,90 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as Runtime from '../wailsjs/runtime'
-import { AnalyzeInputPath, GetTestFormDefaults, PickInputPath, SaveResultCSVByDialog, StartRandomnessTest, StopRandomnessTest } from '../wailsjs/go/main/App'
+import {
+	AnalyzeInputPath,
+	GetTestFormDefaults,
+	PickInputPath,
+	SaveResultCSVByDialog,
+	StartRandomnessTest,
+	StopRandomnessTest,
+} from '../wailsjs/go/main/App'
 
-/* state */
+/* ======================== Constants ======================== */
+
+const MINIMUM_PASS_RATE = 0.98056
+const TABLE_EMPTY_ROWS = 34
+
+/* ======================== State ======================== */
+
 const testInputParams = reactive({
 	pValueThreshold: '0.01',
 	qValueThreshold: '0.0001',
 	inputDataPath: 'xxx\\data_0',
 	randomnessTestStandard: 'NIST',
-	randomnessTestLevel: '2级 (1000000 bits)'
+	randomnessTestLevel: '2级 (1000000 bits)',
 })
+
 const inputPathIsFile = ref(false)
 
 const testSampleStats = reactive({
 	sampleSizeBits: 1000000,
 	sampleCount: 1000,
-	minimumPassCount: 981
+	minimumPassCount: 981,
 })
 
 const runtimeLogText = ref('')
 const resultRows = ref([])
-
 const progress = ref(0)
 const isTesting = ref(false)
 const stopRequestedByUser = ref(false)
-
 const progressTrackRef = ref(null)
 
-/* derived state */
+/* ======================== Computed ======================== */
+
 const hasInputDataPath = computed(() => testInputParams.inputDataPath.trim().length > 0)
+
 const hasRuntimeLogText = computed(() => runtimeLogText.value.trim().length > 0)
-const hasTableResult = computed(() => {
-	return resultRows.value.some((row) => {
+
+const hasTableResult = computed(() =>
+	resultRows.value.some((row) => {
 		const name = String(row?.name ?? '').trim()
 		const p = String(row?.pValue ?? '').trim()
 		const q = String(row?.qValue ?? '').trim()
 		const result = String(row?.result ?? '').trim()
 		return name.length > 0 || p.length > 0 || q.length > 0 || result.length > 0
 	})
-})
+)
+
 const progressDisplay = computed(() => `${Math.round(progress.value)} %`)
+
 const startBtnText = computed(() => (isTesting.value ? '停止测试' : '开始测试'))
 
 const tableHeaders = ['序号', '测试项', 'P值', 'Q值', '结果']
+
 const tableRows = computed(() => {
 	const rows = resultRows.value.map((row, idx) => ({
 		id: Number(row?.index ?? idx + 1),
 		name: String(row?.name ?? ''),
 		p: String(row?.pValue ?? ''),
 		q: String(row?.qValue ?? ''),
-		result: String(row?.result ?? '')
+		result: String(row?.result ?? ''),
 	}))
-	if (rows.length >= 34) {
+	if (rows.length >= TABLE_EMPTY_ROWS) {
 		return rows
 	}
-	const pad = Array.from({ length: 34 - rows.length }, (_, i) => ({
+	const pad = Array.from({ length: TABLE_EMPTY_ROWS - rows.length }, (_, i) => ({
 		id: rows.length + i + 1,
 		name: '',
 		p: '',
 		q: '',
-		result: ''
+		result: '',
 	}))
 	return [...rows, ...pad]
 })
 
-/* pure helpers */
+/* ======================== Pure Helpers ======================== */
+
 const parseLevelNumber = (levelLabel) => {
 	const matched = String(levelLabel).match(/(\d+)\s*级/)
 	if (!matched) {
@@ -104,7 +123,8 @@ const formatDurationMs = (elapsedMs) => {
 	return `${minutes} min ${seconds.toFixed(3)} s`
 }
 
-/* mutators */
+/* ======================== Mutators ======================== */
+
 const appendRuntimeLog = (message) => {
 	const line = String(message ?? '').trimEnd()
 	if (!line) {
@@ -124,7 +144,7 @@ const recalcSampleStats = () => {
 		testSampleStats.minimumPassCount = 0
 		return
 	}
-	testSampleStats.minimumPassCount = Math.ceil(sampleCount * 0.98056)
+	testSampleStats.minimumPassCount = Math.ceil(sampleCount * MINIMUM_PASS_RATE)
 }
 
 const syncProgressCssVar = () => {
@@ -133,6 +153,16 @@ const syncProgressCssVar = () => {
 	}
 	progressTrackRef.value.style.setProperty('--rt-progress-width', `${progress.value}%`)
 }
+
+const clearInputDataPath = () => {
+	testInputParams.inputDataPath = ''
+}
+
+const clearRuntimeLogText = () => {
+	runtimeLogText.value = ''
+}
+
+/* ======================== Async Operations ======================== */
 
 const syncSampleStatsFromPath = async () => {
 	const inputPath = testInputParams.inputDataPath.trim()
@@ -146,7 +176,7 @@ const syncSampleStatsFromPath = async () => {
 			isFile: inputPathIsFile.value,
 			randomnessTestStandard: testInputParams.randomnessTestStandard,
 			randomnessTestLevel: parseLevelNumber(testInputParams.randomnessTestLevel),
-			pValueThreshold: Number(testInputParams.pValueThreshold)
+			pValueThreshold: Number(testInputParams.pValueThreshold),
 		})
 		inputPathIsFile.value = Boolean(result?.isFile)
 		testSampleStats.sampleSizeBits = Number(result?.sampleSizeBits ?? testSampleStats.sampleSizeBits)
@@ -156,14 +186,6 @@ const syncSampleStatsFromPath = async () => {
 		appendRuntimeLog(`[WARN] 路径分析失败: ${error?.message ?? error}`)
 		recalcSampleStats()
 	}
-}
-
-const clearInputDataPath = () => {
-	testInputParams.inputDataPath = ''
-}
-
-const clearRuntimeLogText = () => {
-	runtimeLogText.value = ''
 }
 
 const handleSaveResultCsv = async () => {
@@ -182,7 +204,6 @@ const handleSaveResultCsv = async () => {
 	}
 }
 
-/* event handlers */
 const handlePickInputPath = async () => {
 	try {
 		const picked = await PickInputPath()
@@ -196,6 +217,68 @@ const handlePickInputPath = async () => {
 		appendRuntimeLog(`[WARN] 选择目录取消或失败: ${error?.message ?? error}`)
 	}
 }
+
+const handleStartTest = async () => {
+	if (isTesting.value) {
+		try {
+			stopRequestedByUser.value = true
+			await StopRandomnessTest()
+			appendRuntimeLog('[INFO] 已发送停止测试请求')
+		} catch (error) {
+			stopRequestedByUser.value = false
+			appendRuntimeLog(`[WARN] 停止请求失败: ${error?.message ?? error}`)
+		}
+		return
+	}
+
+	const pValueThreshold = Number(testInputParams.pValueThreshold)
+	const qValueThreshold = Number(testInputParams.qValueThreshold)
+	if (Number.isNaN(pValueThreshold) || Number.isNaN(qValueThreshold)) {
+		appendRuntimeLog('[ERROR] P/Q 阈值必须是数字')
+		return
+	}
+	if (!testInputParams.inputDataPath.trim()) {
+		appendRuntimeLog('[ERROR] 请输入或选择输入目录路径')
+		return
+	}
+
+	const req = {
+		pValueThreshold,
+		qValueThreshold,
+		inputDataPath: testInputParams.inputDataPath.trim(),
+		isFile: inputPathIsFile.value,
+		randomnessTestStandard: testInputParams.randomnessTestStandard,
+		randomnessTestLevel: parseLevelNumber(testInputParams.randomnessTestLevel),
+		sampleCount: Number(testSampleStats.sampleCount),
+	}
+
+	progress.value = 0
+	isTesting.value = true
+	stopRequestedByUser.value = false
+	resultRows.value = []
+	appendRuntimeLog('[INFO] 开始提交参数并执行测试...')
+
+	const requestStartWallTime = new Date()
+	const requestStartPerf = performance.now()
+
+	try {
+		await StartRandomnessTest(req)
+		const requestEndWallTime = new Date()
+		const elapsedMs = performance.now() - requestStartPerf
+		appendRuntimeLog(
+			`[INFO] 总测试时间: ${formatDurationMs(elapsedMs)}（请求发出: ${requestStartWallTime.toLocaleString()}，结果返回: ${requestEndWallTime.toLocaleString()}）`
+		)
+		appendRuntimeLog('[INFO] 测试完成')
+	} catch (error) {
+		appendRuntimeLog(`[ERROR] ${error?.message ?? error}`)
+	} finally {
+		isTesting.value = false
+		progress.value = 0
+		stopRequestedByUser.value = false
+	}
+}
+
+/* ======================== Event Handlers ======================== */
 
 const handleBackendOutput = (event) => {
 	if (!event || typeof event !== 'object') {
@@ -225,69 +308,13 @@ const handleBackendState = (state) => {
 	isTesting.value = state.running
 }
 
-const handleStartTest = async () => {
-	if (isTesting.value) {
-		try {
-			stopRequestedByUser.value = true
-			await StopRandomnessTest()
-			appendRuntimeLog('[INFO] 已发送停止测试请求')
-		} catch (error) {
-			stopRequestedByUser.value = false
-			appendRuntimeLog(`[WARN] 停止请求失败: ${error?.message ?? error}`)
-		}
-		return
-	}
-	const pValueThreshold = Number(testInputParams.pValueThreshold)
-	const qValueThreshold = Number(testInputParams.qValueThreshold)
-	if (Number.isNaN(pValueThreshold) || Number.isNaN(qValueThreshold)) {
-		appendRuntimeLog('[ERROR] P/Q 阈值必须是数字')
-		return
-	}
-	if (!testInputParams.inputDataPath.trim()) {
-		appendRuntimeLog('[ERROR] 请输入或选择输入目录路径')
-		return
-	}
+/* ======================== Lifecycle ======================== */
 
-	const req = {
-		pValueThreshold,
-		qValueThreshold,
-		inputDataPath: testInputParams.inputDataPath.trim(),
-		isFile: inputPathIsFile.value,
-		randomnessTestStandard: testInputParams.randomnessTestStandard,
-		randomnessTestLevel: parseLevelNumber(testInputParams.randomnessTestLevel),
-		sampleCount: Number(testSampleStats.sampleCount)
-	}
-
-	progress.value = 0
-	isTesting.value = true
-	stopRequestedByUser.value = false
-	resultRows.value = []
-	appendRuntimeLog('[INFO] 开始提交参数并执行测试...')
-	const requestStartWallTime = new Date()
-	const requestStartPerf = performance.now()
-
-	try {
-		await StartRandomnessTest(req)
-		const requestEndWallTime = new Date()
-		const elapsedMs = performance.now() - requestStartPerf
-		appendRuntimeLog(
-			`[INFO] 总测试时间: ${formatDurationMs(elapsedMs)}（请求发出: ${requestStartWallTime.toLocaleString()}，结果返回: ${requestEndWallTime.toLocaleString()}）`
-		)
-		appendRuntimeLog('[INFO] 测试完成')
-	} catch (error) {
-		appendRuntimeLog(`[ERROR] ${error?.message ?? error}`)
-	} finally {
-		isTesting.value = false
-		progress.value = 0
-		stopRequestedByUser.value = false
-	}
-}
-
-/* lifecycle */
 onMounted(async () => {
 	Runtime.EventsOn('randomtest_output', handleBackendOutput)
 	Runtime.EventsOn('randomtest_state', handleBackendState)
 	syncProgressCssVar()
+
 	try {
 		const defaults = await GetTestFormDefaults()
 		testInputParams.pValueThreshold = String(defaults?.pValueThreshold ?? testInputParams.pValueThreshold)
@@ -304,6 +331,12 @@ onMounted(async () => {
 		appendRuntimeLog(`[WARN] 读取默认参数失败: ${error?.message ?? error}`)
 	}
 })
+
+onBeforeUnmount(() => {
+	Runtime.EventsOff('randomtest_output', 'randomtest_state')
+})
+
+/* ======================== Watchers ======================== */
 
 watch(
 	() => [testInputParams.randomnessTestStandard, testInputParams.randomnessTestLevel],
@@ -323,11 +356,6 @@ watch(
 	}
 )
 
-onBeforeUnmount(() => {
-	Runtime.EventsOff('randomtest_output', 'randomtest_state')
-})
-
-/* watchers */
 watch(
 	() => [testInputParams.pValueThreshold, testInputParams.randomnessTestLevel, testSampleStats.sampleCount],
 	recalcSampleStats,
@@ -344,7 +372,7 @@ watch(
 </script>
 
 <template>
-	<section class="randomtest_main">
+	<section class="randomtest_main" aria-label="随机数检测主界面">
 		<div class="summary_panel">
 			<header class="summary_title">
 				<span class="summary_dot"></span>
@@ -353,10 +381,10 @@ watch(
 			</header>
 
 			<div class="result_table_wrap">
-				<table class="result_table">
+				<table class="result_table" role="grid" aria-label="测试结果表格">
 					<thead>
 						<tr>
-							<th v-for="header in tableHeaders" :key="header">{{ header }}</th>
+							<th v-for="header in tableHeaders" :key="header" scope="col">{{ header }}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -372,29 +400,29 @@ watch(
 			</div>
 		</div>
 
-		<div class="control_panel">
+		<div class="control_panel" aria-label="测试控制面板">
 			<div class="threshold_row">
 				<div class="field_pair">
-					<label>PValue ≥</label>
-					<input v-model="testInputParams.pValueThreshold" type="text" />
+					<label for="p-value-input">PValue ≥</label>
+					<input id="p-value-input" v-model="testInputParams.pValueThreshold" type="text" />
 				</div>
 				<div class="field_pair">
-					<label>QValue ≥</label>
-					<input v-model="testInputParams.qValueThreshold" type="text" />
+					<label for="q-value-input">QValue ≥</label>
+					<input id="q-value-input" v-model="testInputParams.qValueThreshold" type="text" />
 				</div>
 			</div>
 
 			<div class="selectors_row">
 				<div class="field_pair selector_pair">
-					<label>测试标准</label>
-					<select v-model="testInputParams.randomnessTestStandard">
+					<label for="test-standard-select">测试标准</label>
+					<select id="test-standard-select" v-model="testInputParams.randomnessTestStandard">
 						<option>NIST</option>
 						<option>GM</option>
 					</select>
 				</div>
 				<div class="field_pair selector_pair level_pair">
-					<label>测试等级</label>
-					<select v-model="testInputParams.randomnessTestLevel">
+					<label for="test-level-select">测试等级</label>
+					<select id="test-level-select" v-model="testInputParams.randomnessTestLevel">
 						<option>1级 (20000 bits)</option>
 						<option>2级 (1000000 bits)</option>
 						<option>3级 (100000000 bits)</option>
@@ -427,7 +455,7 @@ watch(
 			</div>
 
 			<div class="progress_row">
-				<div ref="progressTrackRef" class="progress_track">
+				<div ref="progressTrackRef" class="progress_track" role="progressbar" :aria-valuenow="Math.round(progress)" aria-valuemin="0" aria-valuemax="100">
 					<div class="progress_fill"></div>
 					<span>{{ progressDisplay }}</span>
 				</div>
@@ -441,6 +469,7 @@ watch(
 						wrap="off"
 						readonly
 						spellcheck="false"
+						aria-label="运行日志"
 					></textarea>
 					<span
 						v-if="hasRuntimeLogText"
@@ -449,13 +478,12 @@ watch(
 					>清除</span>
 				</div>
 			</div>
-
 		</div>
 	</section>
 </template>
 
 <style scoped>
-/* 1) Page root */
+/* 1) Page Root */
 .randomtest_main {
 	--wails-draggable: no-drag;
 	display: grid;
@@ -485,7 +513,7 @@ watch(
 	box-shadow: none;
 }
 
-/* 2) Left summary panel */
+/* 2) Left Summary Panel */
 .summary_panel {
 	display: flex;
 	flex-direction: column;
@@ -538,6 +566,7 @@ watch(
 	filter: brightness(1.12);
 }
 
+/* ---- Table ---- */
 .result_table_wrap {
 	--wails-draggable: no-drag;
 	flex: 1;
@@ -643,7 +672,7 @@ watch(
 	text-align: center;
 }
 
-/* 3) Right control panel */
+/* 3) Right Control Panel */
 .control_panel {
 	--action-btn-width: 110px;
 	--pair-label-width: 12.5ch;
@@ -679,7 +708,7 @@ watch(
 	background: var(--rt-scroll-thumb-hover);
 }
 
-/* 3.1 shared form primitives */
+/* 3.1 Shared Form Primitives */
 .threshold_row,
 .selectors_row,
 .path_row,
@@ -749,7 +778,7 @@ select:focus {
 	box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
-/* 3.2 threshold row */
+/* 3.2 Threshold Row */
 .threshold_row {
 	justify-content: flex-start;
 	flex-wrap: wrap;
@@ -764,7 +793,7 @@ select:focus {
 	min-width: var(--pair-value-width);
 }
 
-/* 3.3 selectors row */
+/* 3.3 Selectors Row */
 .selectors_row {
 	justify-content: flex-start;
 	column-gap: clamp(14px, 1.4vw, 20px);
@@ -820,7 +849,7 @@ select option:hover {
 	color: var(--select-option-selected-text);
 }
 
-/* 3.4 path row */
+/* 3.4 Path Row */
 .path_row {
 	justify-content: flex-start;
 }
@@ -861,7 +890,7 @@ select option:hover {
 	opacity: 0.82;
 }
 
-/* 3.5 meta and actions */
+/* 3.5 Meta and Actions */
 .meta_and_action_row {
 	justify-content: flex-start;
 	align-items: center;
@@ -922,29 +951,41 @@ select option:hover {
 	height: 34px;
 	border-color: var(--rt-start-btn-border);
 	background: linear-gradient(180deg, var(--rt-start-btn-bg-start), var(--rt-start-btn-bg-end));
-	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36), 0 0 0 1px rgba(255, 255, 255, 0.08), 0 6px 14px var(--rt-start-btn-shadow);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.36),
+		0 0 0 1px rgba(255, 255, 255, 0.08),
+		0 6px 14px var(--rt-start-btn-shadow);
 	color: var(--rt-start-btn-text);
 	text-shadow: none;
 }
 
 .start_btn:hover {
 	filter: brightness(1.06) saturate(1.04);
-	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 18px var(--rt-start-btn-shadow);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.42),
+		0 0 0 1px rgba(255, 255, 255, 0.08),
+		0 8px 18px var(--rt-start-btn-shadow);
 }
 
 .start_btn.is-running {
 	border-color: var(--rt-stop-btn-border);
 	background: linear-gradient(180deg, var(--rt-stop-btn-bg-start), var(--rt-stop-btn-bg-end));
-	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08), 0 6px 14px var(--rt-stop-btn-shadow);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.3),
+		0 0 0 1px rgba(255, 255, 255, 0.08),
+		0 6px 14px var(--rt-stop-btn-shadow);
 	color: var(--rt-stop-btn-text);
 }
 
 .start_btn.is-running:hover {
 	filter: brightness(1.05) saturate(1.03);
-	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36), 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 18px var(--rt-stop-btn-shadow);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.36),
+		0 0 0 1px rgba(255, 255, 255, 0.08),
+		0 8px 18px var(--rt-stop-btn-shadow);
 }
 
-/* 3.6 progress row */
+/* 3.6 Progress Row */
 .progress_row {
 	display: block;
 	align-items: center;
@@ -1002,7 +1043,7 @@ select option:hover {
 	text-shadow: var(--rt-progress-text-shadow);
 }
 
-/* 3.7 terminal output row */
+/* 3.7 Terminal Output Row */
 .terminal_output_row {
 	display: block;
 	flex: 1 1 auto;

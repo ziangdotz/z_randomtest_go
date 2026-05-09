@@ -1,60 +1,64 @@
-
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import * as Runtime from '../wailsjs/runtime'
 import appLogoUrl from './assets/images/appLogo.svg'
-import RandomtestMain from './components/RandomtestMain.vue';
-import About from './components/About.vue';
+import RandomtestMain from './components/RandomtestMain.vue'
+import About from './components/About.vue'
 
-/* 延迟函数 */
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+/* ======================== Constants ======================== */
 
-const appName = "随机数检测工具"
+const HEADER_HEIGHT = 36 // CSS 中定义的 .app_top 高度
+const APP_NAME = '随机数检测工具'
+const MENU_CLOSE_DELAY_MS = 250
+const THEME_STORAGE_KEY = 'app-theme'
 
-const headerHeight = 36 // CSS 中定义的 .app_top 高度
-
-const handleResizeWindow = (width, height) => {
-	Runtime.WindowSetSize(Math.floor(width), Math.floor(height + headerHeight));
-	Runtime.WindowCenter();
-};
-
-// const filePath = ref('')
-// const fileName = computed(() => filePath.value.split(/[\\/]/).pop());
-// const mediaUrl = computed(() => {
-// 	const origin = window.location.origin;
-// 	const formattedPath = filePath.value.replace(/\\/g, '/'); // 替换反斜杠并对特殊字符编码（防止中文路径失效）
-// 	return `${origin}/media-stream/${formattedPath}`; // 构造访问地址，对应后端的 /media-stream/
-// });
+/* ======================== State ======================== */
 
 const isMaximise = ref(false)
-const initWidthAndHeight = ref({w: 0, h: 0})
-/* 全屏切换逻辑 */
+const isMoreDropMenuOpen = ref(false)
+const isAboutPanelOpen = ref(false)
+const activeTheme = ref('dark')
+
+/* ======================== Computed ======================== */
+
+const isDarkTheme = computed(() => activeTheme.value === 'dark')
+const showGlobalOverlay = computed(() => isMoreDropMenuOpen.value || isAboutPanelOpen.value)
+
+/* ======================== Window Management ======================== */
+
+const handleResizeWindow = (width, height) => {
+	Runtime.WindowSetSize(Math.floor(width), Math.floor(height + HEADER_HEIGHT))
+	Runtime.WindowCenter()
+}
+
 const windowToggleMaximise = async () => {
 	if (isMaximise.value) {
-		await Runtime.WindowUnmaximise();
+		await Runtime.WindowUnmaximise()
 		isMaximise.value = false
 	} else {
-		await Runtime.WindowMaximise();
+		await Runtime.WindowMaximise()
 		isMaximise.value = true
 	}
 }
 
-onMounted(() => {
-	// Runtime.EventsOn('wails_file', async (path) => {
-	// 	filePath.value = path
-	// })
-})
+function minimiseWindow() {
+	Runtime.WindowMinimise()
+}
 
-const isMoreDropMenuOpen = ref(false) // 控制 Header 更多按钮左下角菜单的状态
-const isAboutPanelOpen = ref(false)
-const activeTheme = ref('dark')
-const isDarkTheme = computed(() => activeTheme.value === 'dark')
-const showGlobalOverlay = computed(() => isMoreDropMenuOpen.value || isAboutPanelOpen.value)
+function closeWindow() {
+	if (isMaximise.value) {
+		Runtime.WindowUnmaximise()
+		isMaximise.value = false
+	}
+	Runtime.Quit()
+}
+
+/* ======================== Theme ======================== */
 
 const applyTheme = (theme) => {
 	document.documentElement.setAttribute('data-theme', theme)
 	activeTheme.value = theme
-	localStorage.setItem('app-theme', theme)
+	localStorage.setItem(THEME_STORAGE_KEY, theme)
 }
 
 const toggleTheme = () => {
@@ -62,34 +66,61 @@ const toggleTheme = () => {
 	applyTheme(nextTheme)
 }
 
+const loadSavedTheme = () => {
+	const savedTheme = localStorage.getItem(THEME_STORAGE_KEY)
+	if (savedTheme === 'light' || savedTheme === 'dark') {
+		applyTheme(savedTheme)
+		return
+	}
+
+	const existingTheme = document.documentElement.getAttribute('data-theme')
+	if (existingTheme === 'light' || existingTheme === 'dark') {
+		activeTheme.value = existingTheme
+		return
+	}
+
+	applyTheme('dark')
+}
+
+/* ======================== Menu & Panels ======================== */
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 const toggleMenu = () => {
 	isMoreDropMenuOpen.value = !isMoreDropMenuOpen.value
 }
+
 const handleMoreDropMenuAction = async (action) => {
-	isMoreDropMenuOpen.value = false;
-	await sleep(250);
-	if (action === 'newWindow') {
-		/* 获取当前缩放倍率 */
-		const windowDpr = window.devicePixelRatio || 1;
-		/* 调用 Go 后端暴露的 NewWindow 方法 */
-		if (window.go?.main?.App) {
-			window.go.main.App.NewWindow(windowDpr).catch(err => {
-				console.error("无法执行 NewWindow:", err)
-			})
-		}
-	} else if (action === 'aboutApp') {
-		isAboutPanelOpen.value = true
-	} else if (action === 'toggleTheme') {
-		toggleTheme()
-	} else if (action === 'reload') {
-		Runtime.WindowReloadApp(); // 重新加载应用程序前端
-	}
 	isMoreDropMenuOpen.value = false
+	await sleep(MENU_CLOSE_DELAY_MS)
+
+	switch (action) {
+		case 'newWindow': {
+			const windowDpr = window.devicePixelRatio || 1
+			if (window.go?.main?.App) {
+				window.go.main.App.NewWindow(windowDpr).catch((err) => {
+					console.error('无法执行 NewWindow:', err)
+				})
+			}
+			break
+		}
+		case 'aboutApp':
+			isAboutPanelOpen.value = true
+			break
+		case 'toggleTheme':
+			toggleTheme()
+			break
+		case 'reload':
+			Runtime.WindowReloadApp()
+			break
+	}
 }
 
 const closeAboutPanel = () => {
 	isAboutPanelOpen.value = false
 }
+
+/* ======================== Overlay ======================== */
 
 const handleOverlayClick = () => {
 	if (isMoreDropMenuOpen.value) {
@@ -107,63 +138,36 @@ const setOverlayScrollLock = (locked) => {
 	document.body.classList[action]('overlay-open')
 }
 
-watch(showGlobalOverlay, (locked) => {
-	setOverlayScrollLock(locked)
-}, { immediate: true })
+/* ======================== Lifecycle ======================== */
+
+onMounted(() => {
+	loadSavedTheme()
+})
 
 onBeforeUnmount(() => {
 	setOverlayScrollLock(false)
 })
 
-onMounted(() => {
-	const savedTheme = localStorage.getItem('app-theme')
-	if (savedTheme === 'light' || savedTheme === 'dark') {
-		applyTheme(savedTheme)
-		return
-	}
-
-	const existingTheme = document.documentElement.getAttribute('data-theme')
-	if (existingTheme === 'light' || existingTheme === 'dark') {
-		activeTheme.value = existingTheme
-		return
-	}
-
-	applyTheme('dark')
-})
-
-function minimiseWindow() {
-	Runtime.WindowMinimise();
-}
-
-function closeWindow() {
-	if(isMaximise.value) {
-		Runtime.WindowUnmaximise();
-		isMaximise.value = false
-	}
-	Runtime.Quit();
-}
+watch(showGlobalOverlay, (locked) => {
+	setOverlayScrollLock(locked)
+}, { immediate: true })
 </script>
 
 <template>
-	<div class="app"
-		tabindex="0">
-		<header class="app_top">
+	<div class="app" tabindex="0">
+		<header class="app_top" role="banner">
 			<div class="header_left_group">
 				<div class="info">
 					<div class="app_logo">
-						<img class="app_logo_img"
-							:src="appLogoUrl"
-							alt="App Logo" />
+						<img class="app_logo_img" :src="appLogoUrl" alt="App Logo" />
 					</div>
-					<span class="app_name_text">{{ appName }}</span>
+					<span class="app_name_text">{{ APP_NAME }}</span>
 				</div>
 			</div>
 			<div class="header_right_group">
 				<div class="all_icon_btn_group">
 					<div class="all_icon_btn_group_more_menu_wrapper">
-						<button class="icon_btn"
-							@click="toggleMenu"
-							title="更多">
+						<button class="icon_btn" @click="toggleMenu" title="更多" aria-label="更多菜单">
 							<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
 								<circle cx="12" cy="12" r="2"></circle>
 								<circle cx="19" cy="12" r="2"></circle>
@@ -172,32 +176,26 @@ function closeWindow() {
 						</button>
 
 						<Transition name="dropdown_menu_zoom">
-							<div v-if="isMoreDropMenuOpen" class="dropdown_menu">
+							<div v-if="isMoreDropMenuOpen" class="dropdown_menu" role="menu">
 								<div class="dropdown_menu_list">
-									<button class="dropdown_menu_list_item"
-										@click="handleMoreDropMenuAction('aboutApp')">
-										<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-											stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<button class="dropdown_menu_list_item" role="menuitem" @click="handleMoreDropMenuAction('aboutApp')">
+										<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 											<circle cx="12" cy="12" r="10"></circle>
 											<line x1="12" y1="16" x2="12" y2="12"></line>
 											<line x1="12" y1="8" x2="12.01" y2="8"></line>
 										</svg>
 										关于应用
 									</button>
-									<button class="dropdown_menu_list_item"
-										@click="handleMoreDropMenuAction('newWindow')">
-										<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-											stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<button class="dropdown_menu_list_item" role="menuitem" @click="handleMoreDropMenuAction('newWindow')">
+										<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 											<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-14a2 2 0 0 1-2-2v-4"></path>
 											<rect x="3" y="3" width="12" height="12" rx="2" ry="2"></rect>
 											<line x1="9" y1="9" x2="15" y2="15"></line>
 										</svg>
 										新建窗口
 									</button>
-									<button class="dropdown_menu_list_item"
-										@click="handleMoreDropMenuAction('toggleTheme')">
-										<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-											stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<button class="dropdown_menu_list_item" role="menuitem" @click="handleMoreDropMenuAction('toggleTheme')">
+										<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 											<g v-if="isDarkTheme">
 												<circle cx="12" cy="12" r="4"></circle>
 												<line x1="12" y1="2" x2="12" y2="5"></line>
@@ -213,11 +211,9 @@ function closeWindow() {
 										</svg>
 										切换主题
 									</button>
-									<div class="dropdown_menu_divider"></div>
-									<button class="dropdown_menu_list_item danger"
-										@click="handleMoreDropMenuAction('reload')">
-										<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-											stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<div class="dropdown_menu_divider" role="separator"></div>
+									<button class="dropdown_menu_list_item danger" role="menuitem" @click="handleMoreDropMenuAction('reload')">
+										<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 											<path d="M21 2v6h-6"></path>
 											<path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
 											<path d="M3 22v-6h6"></path>
@@ -225,50 +221,30 @@ function closeWindow() {
 										</svg>
 										重新加载
 									</button>
-
-									<!--<button class="dropdown_menu_list_item"
-										@click="handleMoreDropMenuAction('appSetting')">
-										<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-											stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-											<circle cx="12" cy="12" r="3"></circle>
-											<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-										</svg>
-										设置
-									</button> -->
 								</div>
 							</div>
 						</Transition>
 					</div>
 
-					<button class="icon_btn"
-						@click="minimiseWindow"
-						title="缩小到任务栏">
+					<button class="icon_btn" @click="minimiseWindow" title="缩小到任务栏" aria-label="最小化窗口">
 						<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<line x1="5" y1="12" x2="19" y2="12"></line>
 						</svg>
 					</button>
 
-					<button v-if="!isMaximise"
-						class="icon_btn"
-						@click="windowToggleMaximise"
-						title="全屏">
+					<button v-if="!isMaximise" class="icon_btn" @click="windowToggleMaximise" title="全屏" aria-label="最大化窗口">
 						<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.2">
 							<rect x="5" y="5" width="14" height="14" rx="1.5" />
 						</svg>
 					</button>
-					<button v-else
-						class="icon_btn"
-						@click="windowToggleMaximise"
-						title="取消全屏">
+					<button v-else class="icon_btn" @click="windowToggleMaximise" title="取消全屏" aria-label="还原窗口">
 						<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5">
 							<path d="M8 8V6a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 19 6v8a1.5 1.5 0 0 1-1.5 1.5H16" stroke-linecap="round" stroke-linejoin="round" />
 							<rect x="5" y="8" width="11" height="11" rx="1.5" stroke-linecap="round" stroke-linejoin="round" />
 						</svg>
 					</button>
 
-					<button class="icon_btn close_btn"
-						@click="closeWindow"
-						title="关闭">
+					<button class="icon_btn close_btn" @click="closeWindow" title="关闭" aria-label="关闭窗口">
 						<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
 							<line x1="18" y1="6" x2="6" y2="18"></line>
 							<line x1="6" y1="6" x2="18" y2="18"></line>
@@ -283,36 +259,35 @@ function closeWindow() {
 		</main>
 
 		<Transition name="about_panel_slide">
-			<About v-if="isAboutPanelOpen"
-				@close="closeAboutPanel" />
+			<About v-if="isAboutPanelOpen" @close="closeAboutPanel" />
 		</Transition>
 
 		<Transition name="overlay_fade">
-			<div v-if="showGlobalOverlay" class="global_overlay"
-				@click="handleOverlayClick"></div>
+			<div v-if="showGlobalOverlay" class="global_overlay" @click="handleOverlayClick"></div>
 		</Transition>
 	</div>
 </template>
 
 <style scoped>
-/* 定义统一的动画参数变量 */
 :root {
 	--menu-anim-time: 0.1s;
 	--menu-bezier: cubic-bezier(0.2, 0, 0.1, 0.5);
 }
 
 * {
-	user-select: none; /* 禁止全局文字选中 标准语法 */
-	-ms-user-select: none; /* 禁止全局文字选中 IE/Edge */
-	-moz-user-select: none; /* 禁止全局文字选中 Firefox */
-	-webkit-user-select: none; /* 禁止全局文字选中 Safari, Chrome, WebView2 */
+	user-select: none;
+	-ms-user-select: none;
+	-moz-user-select: none;
+	-webkit-user-select: none;
 }
+
+/* ---- App Shell ---- */
 
 .app {
 	position: relative;
 	width: 100%;
 	height: 100%;
-	padding: 0px;
+	padding: 0;
 	box-sizing: border-box;
 	background-color: var(--window-bg);
 	display: flex;
@@ -320,10 +295,24 @@ function closeWindow() {
 	overflow: hidden;
 }
 
+.app_viewer {
+	width: 100%;
+	background-color: transparent;
+	flex: 1;
+	display: flex;
+	justify-content: stretch;
+	align-items: stretch;
+	min-height: 0;
+	overflow: hidden;
+	overscroll-behavior: none;
+}
+
+/* ---- Title Bar ---- */
+
 .app_top {
 	--wails-draggable: drag;
 	height: 34px;
-	padding: 0px;
+	padding: 0;
 	background: transparent;
 	display: flex;
 	align-items: center;
@@ -336,8 +325,8 @@ function closeWindow() {
 
 .header_left_group {
 	--wails-draggable: no-drag;
-	min-width: 0px;
-	padding: 0px;
+	min-width: 0;
+	padding: 0;
 	display: flex;
 	align-items: center;
 	justify-content: flex-start;
@@ -350,22 +339,17 @@ function closeWindow() {
 	justify-content: flex-end;
 }
 
-.all_icon_btn_group {
-	display: flex;
-	align-items: center;
-	justify-content: flex-end;
-}
-
 .info {
-	min-width: 0px;
-	margin: 0px 10px;
+	min-width: 0;
+	margin: 0 10px;
 	flex: 1;
 	display: flex;
 	align-items: center;
-	justify-content: left;
+	justify-content: flex-start;
 	gap: 10px;
 	pointer-events: auto;
 }
+
 .app_logo {
 	width: 22px;
 	height: 22px;
@@ -379,9 +363,9 @@ function closeWindow() {
 	width: 100%;
 	height: 100%;
 	display: flex;
-	object-fit: contain; /* 保持比例 */
-	pointer-events: none; /* 防止用户右键保存或拖动图片 */
-	-webkit-user-drag: none; /* 禁用 Webkit 内核的图片拖拽 */
+	object-fit: contain;
+	pointer-events: none;
+	-webkit-user-drag: none;
 }
 
 .app_name_text {
@@ -390,17 +374,31 @@ function closeWindow() {
 	color: var(--app-text);
 	font-size: 13px;
 	font-weight: 500;
-	line-height: 1.0;
+	line-height: 1;
 	white-space: nowrap;
 	overflow: hidden;
-	text-overflow: ellipsis; /* 长文件名自动显示省略号 */
+	text-overflow: ellipsis;
+}
+
+/* ---- Icon Buttons ---- */
+
+.all_icon_btn_group {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+}
+
+.all_icon_btn_group_more_menu_wrapper {
+	position: relative;
+	display: flex;
+	align-items: center;
 }
 
 .icon_btn {
-	--wails-draggable: no-drag; /* 禁止按钮区域的拖动，否则点击无效 */
+	--wails-draggable: no-drag;
 	width: 42px;
 	height: 34px;
-	padding: 10px 0px;
+	padding: 10px 0;
 	background-color: transparent;
 	border: none;
 	color: var(--topbar-icon);
@@ -411,45 +409,44 @@ function closeWindow() {
 	cursor: pointer;
 	transition: background-color 0.2s;
 }
+
 .icon_btn:hover {
 	background-color: var(--topbar-hover);
 	color: var(--topbar-icon-active);
 }
+
 .icon_btn svg {
 	display: block;
 	width: 100%;
 	height: 100%;
 }
+
 .close_btn:hover {
 	background-color: var(--topbar-danger);
 	color: var(--danger-text-on-bg);
 }
 
-.all_icon_btn_group_more_menu_wrapper {
-	position: relative;
-	display: flex;
-	align-items: center;
-}
+/* ---- Dropdown Menu ---- */
 
 .dropdown_menu {
 	position: absolute;
-	top: 36px; /* top 36px */
-	right: 0; /* 右边对齐 */
-	width: max-content; /* 宽度根据内容最大长度自动调整 */
+	top: 36px;
+	right: 0;
+	width: max-content;
 	min-width: 100px;
-	height: max-content; /* 高度根据内容最大长度自动调整 */
+	height: max-content;
 	max-height: 200px;
-	overflow-y: auto; /* 支持滚动 */
-	scrollbar-width: none; /* 隐藏滚动条 */
-	-ms-overflow-style: none; /* 隐藏滚动条 IE 10+ */
+	overflow-y: auto;
+	scrollbar-width: none;
+	-ms-overflow-style: none;
 	background-color: var(--window-bg);
 	backdrop-filter: blur(12px);
-	-webkit-backdrop-filter: blur(12px); /* 兼容性其他内核 */
-	background-clip: padding-box; /* 确保背景模糊只作用于内容区域 */
+	-webkit-backdrop-filter: blur(12px);
+	background-clip: padding-box;
 	border: 1px solid var(--topbar-menu-border);
 	border-radius: 8px;
 	box-shadow: var(--topbar-menu-shadow);
-	padding: 0px;
+	padding: 0;
 	z-index: 1001;
 }
 
@@ -471,13 +468,16 @@ function closeWindow() {
 	transition: background 0.2s;
 	cursor: pointer;
 }
+
 .dropdown_menu_list_item:hover {
 	background-color: var(--topbar-hover);
 	color: var(--topbar-icon-active);
 }
+
 .dropdown_menu_list_item.danger {
 	color: var(--topbar-danger);
 }
+
 .dropdown_menu_list_item.danger:hover {
 	background-color: rgba(255, 82, 82, 0.2);
 	color: var(--topbar-danger);
@@ -494,7 +494,8 @@ function closeWindow() {
 	background-color: var(--topbar-menu-divider);
 }
 
-/* 菜单动画 */
+/* ---- Menu Animation ---- */
+
 .dropdown_menu_zoom-enter-active,
 .dropdown_menu_zoom-leave-active {
 	transition:
@@ -505,37 +506,24 @@ function closeWindow() {
 .dropdown_menu_zoom-enter-from,
 .dropdown_menu_zoom-leave-to {
 	opacity: 0;
-	transform: translateY(-5px) scale(0.9); /* 略微缩小并上移 */
-	transform-origin: top right; /* 动画从右上角开始 */
+	transform: translateY(-5px) scale(0.9);
+	transform-origin: top right;
 }
 
-.app_viewer {
-	width: 100%;
-	background-color: transparent;
-	flex: 1;
-	display: flex;
-	justify-content: stretch;
-	align-items: stretch;
-	min-height: 0;
-	overflow: hidden;
-	overscroll-behavior: none;
-}
+/* ---- Global Overlay ---- */
 
-/******** 全局遮罩 ********/
 .global_overlay {
 	position: absolute;
 	inset: 0;
 	z-index: 1000;
 	--wails-draggable: no-drag;
-	background-color: var(--overlay-bg);
-	backdrop-filter: blur(0.7px) saturate(100%) brightness(100%);
-	-webkit-backdrop-filter: blur(0.7px) saturate(100%) brightness(100%); /* 兼容性其他内核 */
 	background: var(--overlay-bg);
-	pointer-events: auto; /* 确保拦截点击 */
+	backdrop-filter: blur(0.7px) saturate(100%) brightness(100%);
+	-webkit-backdrop-filter: blur(0.7px) saturate(100%) brightness(100%);
+	pointer-events: auto;
 	touch-action: none;
 }
 
-/* 全局遮罩动画 */
 .overlay_fade-enter-active {
 	transition: opacity 100ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -549,6 +537,7 @@ function closeWindow() {
 	opacity: 0;
 }
 
+/* ---- About Panel Slide ---- */
 
 .about_panel_slide-enter-active {
 	transition:
