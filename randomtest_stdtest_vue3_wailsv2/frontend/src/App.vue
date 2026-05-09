@@ -308,12 +308,6 @@ function closeWindow() {
 	-webkit-user-select: none; /* 禁止全局文字选中 Safari, Chrome, WebView2 */
 }
 
-body {
-	margin: 0;
-	background-color: transparent;
-	font-family: system-ui, -apple-system, sans-serif;
-}
-
 .app {
 	position: relative;
 	width: 100%;
