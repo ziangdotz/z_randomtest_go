@@ -14,6 +14,12 @@ type ServerSetting struct {
 	Port         string
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
+	// 阶段④新增:
+	IdleTimeout       time.Duration // 空闲连接超时 (秒)
+	MaxRequestBodyMB  int           // 请求体大小上限 (MB), <=0 时取默认 64
+	MaxConcurrentJobs int           // 最大并发检测任务数 (CPU 密集), <=0 时取默认 1
+	JobTimeoutSec     int           // 异步任务超时 (秒), 0 = 不限
+	PprofEnable       bool          // 是否启用 pprof (仅回环监听, 端口 = Port+1)
 }
 
 var (
@@ -45,4 +51,11 @@ func Setup() {
 	mapToSection("server", ServerSettings)
 	ServerSettings.ReadTimeout *= time.Second
 	ServerSettings.WriteTimeout *= time.Second
+	ServerSettings.IdleTimeout *= time.Second
+	if ServerSettings.MaxRequestBodyMB <= 0 {
+		ServerSettings.MaxRequestBodyMB = 64
+	}
+	if ServerSettings.MaxConcurrentJobs <= 0 {
+		ServerSettings.MaxConcurrentJobs = 1
+	}
 }

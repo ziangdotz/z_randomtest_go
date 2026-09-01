@@ -161,23 +161,39 @@ func Bit2Byte(arr []bool) byte {
 	return res
 }
 
-func Byte2Bit(b byte) []bool {
-	return []bool{
-		b&0x80 > 0,
-		b&0x40 > 0,
-		b&0x20 > 0,
-		b&0x10 > 0,
-		b&0x08 > 0,
-		b&0x04 > 0,
-		b&0x02 > 0,
-		b&0x01 > 0,
+// bitsExpandTable 字节 → 8 位大端序 0/1 展开查表 (阶段③热路径优化:
+// 消除逐位循环移位/逐位 append, 一次查表完成字节展开)。
+var bitsExpandTable [256][8]byte
+
+func init() {
+	for v := 0; v < 256; v++ {
+		for j := 0; j < 8; j++ {
+			bitsExpandTable[v][j] = byte((v >> (7 - j)) & 0x01)
+		}
+	}
+}
+
+// BytesToBitBytes 将字节流按大端位序展开为 0/1 字节流写入 dst
+// (要求 len(dst) >= len(src)*8), 供 C 互操作等 0/1 字节表示场景复用。
+func BytesToBitBytes(dst, src []byte) {
+	for i, b := range src {
+		copy(dst[i*8:(i+1)*8], bitsExpandTable[b][:])
 	}
 }
 
 func Byte2BitArr(src []byte) []bool {
-	res := make([]bool, 0, len(src)*8)
-	for _, b := range src {
-		res = append(res, Byte2Bit(b)...)
+	res := make([]bool, len(src)*8)
+	for i, b := range src {
+		row := &bitsExpandTable[b]
+		base := i * 8
+		res[base+0] = row[0] != 0
+		res[base+1] = row[1] != 0
+		res[base+2] = row[2] != 0
+		res[base+3] = row[3] != 0
+		res[base+4] = row[4] != 0
+		res[base+5] = row[5] != 0
+		res[base+6] = row[6] != 0
+		res[base+7] = row[7] != 0
 	}
 	return res
 }

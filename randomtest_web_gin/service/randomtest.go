@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -126,6 +127,47 @@ func fillResultPassedStatus(results []TestFuncResultDynamic) {
 	for i := range results {
 		results[i].IsPassed = calcResultIsPassed(results[i], alpha, alphaT)
 	}
+}
+
+// outcomeToDynamic 将 core 套件的单项结果映射为 Web 响应结构。
+// JSON 字段形态与既有实现保持一致: 双值检测 (SerialTest) 填 P1/P2/Q1/Q2,
+// 单值检测填 P1/Q1 (无 Q 时字段保持 null), 多值检测仅填 P1。
+func outcomeToDynamic(name string, o randomtest_core.Outcome) TestFuncResultDynamic {
+	r := TestFuncResultDynamic{TestFuncName: name, P1Value: o.P}
+	if o.RequireAll && len(o.P) == 2 {
+		r.P1Value = o.P[:1]
+		r.P2Value = o.P[1:]
+		r.Q1Value = o.Q[:1]
+		r.Q2Value = o.Q[1:]
+	} else if len(o.P) == 1 {
+		r.P1Value = o.P
+		r.Q1Value = o.Q
+	}
+	return r
+}
+
+// runPresetSuiteService 按 core 套件顺序执行全部检测项并组装响应。
+// 各检测项以 len(数据)*8 作为位长 n, 与 CLI/桌面端一致;
+// 单项失败 (参数非法等) 时中止并返回错误, 与既有行为一致。
+func runPresetSuiteService(suite *randomtest_core.Suite, uploadFileData []byte) ([]TestFuncResultDynamic, error) {
+	return runPresetSuiteServiceCtx(context.Background(), suite, uploadFileData)
+}
+
+// runPresetSuiteServiceCtx 同 runPresetSuiteService, 另在每个检测项开始前检查取消信号 (阶段④ 4.2)。
+func runPresetSuiteServiceCtx(ctx context.Context, suite *randomtest_core.Suite, uploadFileData []byte) ([]TestFuncResultDynamic, error) {
+	results := make([]TestFuncResultDynamic, 0, len(suite.Items))
+	for _, item := range suite.Items {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		o := item.Run(uploadFileData)
+		if o.Err != nil {
+			return nil, o.Err
+		}
+		results = append(results, outcomeToDynamic(item.Name, o))
+	}
+	fillResultPassedStatus(results)
+	return results, nil
 }
 
 func (randomTestHTTPRequestStruct *RandomTestHTTPRequestStruct) decodeUploadFileData(maxSize int) ([]byte, error) {
@@ -275,11 +317,14 @@ func (randomTestHTTPRequestStruct *RandomTestHTTPRequestStruct) HandleRandomTest
 	}
 
 	if randomTestHTTPRequestStruct.NonOverlappingTemplateMatchingTest.Enable {
-		pValue, _, _ := randomtest_core.NonOverlappingTemplateMatchingTestBytes(
+		pValue, _, _, err := randomtest_core.NonOverlappingTemplateMatchingTestBytes(
 			uploadFileData,
 			randomTestHTTPRequestStruct.NonOverlappingTemplateMatchingTest.N,
 			randomTestHTTPRequestStruct.NonOverlappingTemplateMatchingTest.M,
 		)
+		if err != nil {
+			return nil, err
+		}
 		testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
 			TestFuncName: "NonOverlappingTemplateMatchingTest",
 			P1Value:      pValue,
@@ -290,11 +335,14 @@ func (randomTestHTTPRequestStruct *RandomTestHTTPRequestStruct) HandleRandomTest
 	}
 
 	if randomTestHTTPRequestStruct.OverlappingTemplateMatchingTest.Enable {
-		pValue, _ := randomtest_core.OverlappingTemplateMatchingTestBytes(
+		pValue, _, err := randomtest_core.OverlappingTemplateMatchingTestBytes(
 			uploadFileData,
 			randomTestHTTPRequestStruct.OverlappingTemplateMatchingTest.N,
 			randomTestHTTPRequestStruct.OverlappingTemplateMatchingTest.M,
 		)
+		if err != nil {
+			return nil, err
+		}
 		testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
 			TestFuncName: "OverlappingTemplateMatchingTest",
 			P1Value:      []float64{pValue},
@@ -327,7 +375,10 @@ func (randomTestHTTPRequestStruct *RandomTestHTTPRequestStruct) HandleRandomTest
 	}
 
 	if randomTestHTTPRequestStruct.RandomExcursionsTest.Enable {
-		pValue, _, _ := randomtest_core.RandomExcursionsTestBytes(uploadFileData, randomTestHTTPRequestStruct.RandomExcursionsTest.N)
+		pValue, _, _, err := randomtest_core.RandomExcursionsTestBytes(uploadFileData, randomTestHTTPRequestStruct.RandomExcursionsTest.N)
+		if err != nil {
+			return nil, err
+		}
 		testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
 			TestFuncName: "RandomExcursionsTest",
 			P1Value:      pValue,
@@ -338,7 +389,10 @@ func (randomTestHTTPRequestStruct *RandomTestHTTPRequestStruct) HandleRandomTest
 	}
 
 	if randomTestHTTPRequestStruct.RandomExcursionsVariantTest.Enable {
-		pValue, _, _ := randomtest_core.RandomExcursionsVariantTestBytes(uploadFileData, randomTestHTTPRequestStruct.RandomExcursionsVariantTest.N)
+		pValue, _, _, err := randomtest_core.RandomExcursionsVariantTestBytes(uploadFileData, randomTestHTTPRequestStruct.RandomExcursionsVariantTest.N)
+		if err != nil {
+			return nil, err
+		}
 		testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
 			TestFuncName: "RandomExcursionsVariantTest",
 			P1Value:      pValue,
@@ -419,6 +473,11 @@ func (randomTestHTTPRequestStruct *RandomTestHTTPRequestStruct) HandleRandomTest
 }
 
 func (randomTestHTTPRequestStruct *RandomTestHTTPRequestStruct) HandleRandomTestNISTLevel2Service() ([]TestFuncResultDynamic, error) {
+	return randomTestHTTPRequestStruct.HandleRandomTestNISTLevel2ServiceCtx(context.Background())
+}
+
+// HandleRandomTestNISTLevel2ServiceCtx 同上, 支持取消传导 (阶段④ 4.2 异步任务)。
+func (randomTestHTTPRequestStruct *RandomTestHTTPRequestStruct) HandleRandomTestNISTLevel2ServiceCtx(ctx context.Context) ([]TestFuncResultDynamic, error) {
 	maxSize := 1 * 1024 * 1024 * 1024
 
 	uploadFileData, err := randomTestHTTPRequestStruct.decodeUploadFileData(maxSize)
@@ -426,130 +485,15 @@ func (randomTestHTTPRequestStruct *RandomTestHTTPRequestStruct) HandleRandomTest
 		return nil, err
 	}
 
-	testFuncResultDynamic := []TestFuncResultDynamic{}
-
-	pValue, qValue := randomtest_core.FrequencyTestBytes(uploadFileData)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "FrequencyTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.BlockFrequencyTestBytes(uploadFileData, 128)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "BlockFrequencyTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.CumulativeSumsTestBytes(uploadFileData, true)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "CumulativeSumsTest (Forward)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.CumulativeSumsTestBytes(uploadFileData, false)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "CumulativeSumsTest (Backward)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.RunsTestBytes(uploadFileData)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "RunsTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.LongestRunOfOnesTestBytes(uploadFileData, true)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "LongestRunofOnesTest '1'",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.LongestRunOfOnesTestBytes(uploadFileData, false)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "LongestRunofOnesTest '0'",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.RankTestBytes(uploadFileData, 32, 32)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "RankTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.DiscreteFourierTransformTestBytes(uploadFileData)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "DiscreteFourierTransformTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValues, _, _ := randomtest_core.NonOverlappingTemplateMatchingTestBytes(uploadFileData, 1000000, 9)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "NonOverlappingTemplateMatchingTest",
-		P1Value:      pValues,
-	})
-
-	pValue, _ = randomtest_core.OverlappingTemplateMatchingTestBytes(uploadFileData, 1000000, 9)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "OverlappingTemplateMatchingTest",
-		P1Value:      []float64{pValue},
-	})
-
-	pValue, qValue = randomtest_core.UniversalTestBytes(uploadFileData)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "UniversalTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.ApproximateEntropyTestBytes(uploadFileData, 10)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "ApproximateEntropyTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValues, _, _ = randomtest_core.RandomExcursionsTestBytes(uploadFileData, 1000000)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "RandomExcursionsTest",
-		P1Value:      pValues,
-	})
-
-	pValues, _, _ = randomtest_core.RandomExcursionsVariantTestBytes(uploadFileData, 1000000)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "RandomExcursionsVariantTest",
-		P1Value:      pValues,
-	})
-
-	pValue1, qValue1, pValue2, qValue2 := randomtest_core.SerialTestBytes(uploadFileData, 16)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "SerialTest",
-		P1Value:      []float64{pValue1},
-		P2Value:      []float64{pValue2},
-		Q1Value:      []float64{qValue1},
-		Q2Value:      []float64{qValue2},
-	})
-
-	pValue, qValue = randomtest_core.LinearComplexityTestBytes(uploadFileData, 500)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "LinearComplexityTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	fillResultPassedStatus(testFuncResultDynamic)
-	return testFuncResultDynamic, nil
+	return runPresetSuiteServiceCtx(ctx, randomtest_core.SuiteNISTLevel2(), uploadFileData)
 }
 
 func (randomTestHTTPRequestStruct *RandomTestHTTPRequestStruct) HandleRandomTestGMLevel2Service() ([]TestFuncResultDynamic, error) {
+	return randomTestHTTPRequestStruct.HandleRandomTestGMLevel2ServiceCtx(context.Background())
+}
+
+// HandleRandomTestGMLevel2ServiceCtx 同上, 支持取消传导 (阶段④ 4.2 异步任务)。
+func (randomTestHTTPRequestStruct *RandomTestHTTPRequestStruct) HandleRandomTestGMLevel2ServiceCtx(ctx context.Context) ([]TestFuncResultDynamic, error) {
 	maxSize := 1 * 1024 * 1024 * 1024
 
 	uploadFileData, err := randomTestHTTPRequestStruct.decodeUploadFileData(maxSize)
@@ -557,187 +501,9 @@ func (randomTestHTTPRequestStruct *RandomTestHTTPRequestStruct) HandleRandomTest
 		return nil, err
 	}
 
-	testFuncResultDynamic := []TestFuncResultDynamic{}
-
-	pValue, qValue := randomtest_core.FrequencyTestBytes(uploadFileData)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "FrequencyTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.BlockFrequencyTestBytes(uploadFileData, 10000)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "BlockFrequencyTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.PokerTestBytes(uploadFileData, 4)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "PokerTest (4)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.PokerTestBytes(uploadFileData, 8)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "PokerTest (8)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue1, qValue1, pValue2, qValue2 := randomtest_core.SerialTestBytes(uploadFileData, 3)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "SerialTest (3)",
-		P1Value:      []float64{pValue1},
-		P2Value:      []float64{pValue2},
-		Q1Value:      []float64{qValue1},
-		Q2Value:      []float64{qValue2},
-	})
-
-	pValue1, qValue1, pValue2, qValue2 = randomtest_core.SerialTestBytes(uploadFileData, 5)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "SerialTest (5)",
-		P1Value:      []float64{pValue1},
-		P2Value:      []float64{pValue2},
-		Q1Value:      []float64{qValue1},
-		Q2Value:      []float64{qValue2},
-	})
-
-	pValue, qValue = randomtest_core.RunsTestBytes(uploadFileData)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "RunsTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.RunsDistributionTestBytes(uploadFileData)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "RunsDistributionTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.LongestRunOfOnesTestBytes(uploadFileData, true)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "LongestRunofOnesTest '1'",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.LongestRunOfOnesTestBytes(uploadFileData, false)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "LongestRunofOnesTest '0'",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.BinaryDerivativeTestBytes(uploadFileData, 3)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "BinaryDerivativeTest (3)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.BinaryDerivativeTestBytes(uploadFileData, 7)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "BinaryDerivativeTest (7)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.AutocorrelationTestBytes(uploadFileData, 1)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "AutocorrelationTest (1)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.AutocorrelationTestBytes(uploadFileData, 2)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "AutocorrelationTest (2)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.AutocorrelationTestBytes(uploadFileData, 8)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "AutocorrelationTest (8)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.AutocorrelationTestBytes(uploadFileData, 16)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "AutocorrelationTest (16)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.RankTestBytes(uploadFileData, 32, 32)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "RankTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.CumulativeSumsTestBytes(uploadFileData, true)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "CumulativeSumsTest (Forward)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.CumulativeSumsTestBytes(uploadFileData, false)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "CumulativeSumsTest (Backward)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.ApproximateEntropyTestBytes(uploadFileData, 2)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "ApproximateEntropyTest (2)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.ApproximateEntropyTestBytes(uploadFileData, 5)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "ApproximateEntropyTest (5)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.LinearComplexityTestBytes(uploadFileData, 500)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "LinearComplexityTest (500)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.LinearComplexityTestBytes(uploadFileData, 1000)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "LinearComplexityTest (1000)",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.UniversalTestBytes(uploadFileData)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "UniversalTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	pValue, qValue = randomtest_core.DiscreteFourierTransformTestBytes(uploadFileData)
-	testFuncResultDynamic = append(testFuncResultDynamic, TestFuncResultDynamic{
-		TestFuncName: "DiscreteFourierTransformTest",
-		P1Value:      []float64{pValue},
-		Q1Value:      []float64{qValue},
-	})
-
-	fillResultPassedStatus(testFuncResultDynamic)
-	return testFuncResultDynamic, nil
+	suite, err := randomtest_core.SuiteGM(2)
+	if err != nil {
+		return nil, err
+	}
+	return runPresetSuiteServiceCtx(ctx, suite, uploadFileData)
 }

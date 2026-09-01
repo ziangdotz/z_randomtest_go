@@ -2,19 +2,41 @@ package randomtest_core
 
 import (
 	"math"
+	"sync"
 )
+
+// lcBuffers 线性复杂度检测的工作缓冲 (阶段③: 池化复用, 消除每块 4 次 []int 分配)。
+type lcBuffers struct {
+	B_, C, P, T []int
+}
+
+var lcBufPool = sync.Pool{New: func() interface{} { return new(lcBuffers) }}
+
+// ensure 保证四个缓冲容量足够 (不足时整体重新分配), 并截取到所需长度。
+func (b *lcBuffers) ensure(M int) {
+	if cap(b.B_) < M {
+		b.B_ = make([]int, M)
+		b.C = make([]int, M)
+		b.P = make([]int, M)
+		b.T = make([]int, M)
+		return
+	}
+	b.B_ = b.B_[:M]
+	b.C = b.C[:M]
+	b.P = b.P[:M]
+	b.T = b.T[:M]
+}
 
 func linearComplexity(a []bool, M int) int {
 	var N_ int = 0
 	var L int = 0
 	var m int = -1
 	var d int = 0
-	var B_, C, P, T []int
 
-	B_ = make([]int, M)
-	C = make([]int, M)
-	P = make([]int, M)
-	T = make([]int, M)
+	bufs := lcBufPool.Get().(*lcBuffers)
+	defer lcBufPool.Put(bufs)
+	bufs.ensure(M)
+	B_, C, P, T := bufs.B_, bufs.C, bufs.P, bufs.T
 
 	for i := 0; i < M; i++ {
 		B_[i] = 0

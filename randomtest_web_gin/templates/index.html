@@ -444,6 +444,33 @@
 			}
 		}
 
+		/* ===== Async job box ===== */
+
+		.async-box {
+			margin-top: 16px;
+			padding: 14px;
+			border: 1px solid var(--line);
+			border-radius: var(--radius-md);
+			background: rgba(255, 255, 255, 0.6);
+		}
+
+		.async-head {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 4px 12px;
+			align-items: baseline;
+		}
+
+		.async-title {
+			font-size: 14px;
+			font-weight: 700;
+		}
+
+		.async-hint {
+			font-size: 12px;
+			color: var(--muted);
+		}
+
 		/* ===== Responsive ===== */
 
 		@media (max-width: 960px) {
@@ -492,6 +519,18 @@
 					<input id="fileInput" type="file" accept=".bin,.dat,.txt,.raw" hidden>
 					<div class="file-meta" id="fileMeta"></div>
 					<div class="status" id="statusBox"></div>
+					<div class="async-box">
+						<div class="async-head">
+							<span class="async-title">后台任务模式</span>
+							<span class="async-hint">使用上方相同的文件与检测模式，提交后立即返回任务 ID，页面自动轮询进度，preset 任务可随时取消</span>
+						</div>
+						<div class="row">
+							<button class="btn ghost" id="jobSubmitBtn" type="button">提交后台任务</button>
+							<button class="btn stop" id="jobCancelBtn" type="button" style="display:none;">取消任务</button>
+							<div class="loading" id="jobLoading"><span class="dot"></span><span id="jobStatusText">准备提交...</span></div>
+						</div>
+						<div class="status" id="jobStatusBox"></div>
+					</div>
 				</div>
 			</article>
 
@@ -690,6 +729,8 @@
 		const API_PATH_CUSTOM = "/api/v1/randomtest/handleRandomTestHTTPRequest";
 		const API_PATH_NIST_LEVEL2 = "/api/v1/randomtest/handleRandomTestHTTPRequestNISTLevel2";
 		const API_PATH_GM_LEVEL2 = "/api/v1/randomtest/handleRandomTestHTTPRequestGMLevel2";
+		const API_PATH_JOBS = "/api/v1/randomtest/jobs";
+		const JOB_POLL_INTERVAL_MS = 1500;
 
 		const TEST_NAME_ORDER = [
 			"FrequencyTest",
@@ -750,7 +791,12 @@
 			uploadBox: document.getElementById("uploadBox"),
 			resultPanel: document.getElementById("resultPanel"),
 			resultBody: document.getElementById("resultBody"),
-			resultCount: document.getElementById("resultCount")
+			resultCount: document.getElementById("resultCount"),
+			jobSubmitBtn: document.getElementById("jobSubmitBtn"),
+			jobCancelBtn: document.getElementById("jobCancelBtn"),
+			jobLoading: document.getElementById("jobLoading"),
+			jobStatusText: document.getElementById("jobStatusText"),
+			jobStatusBox: document.getElementById("jobStatusBox")
 		};
 
 		/* ===== Utility functions ===== */
@@ -1104,6 +1150,194 @@
 			};
 		}
 
+		/* ===== Async background job ===== */
+
+		let jobCurrentId = null;
+		let jobPollTimer = null;
+		let jobStartedAt = 0;
+		let jobSubmitting = false;
+
+		function showJobStatus(type, message) {
+			els.jobStatusBox.className = "status " + type;
+			els.jobStatusBox.textContent = message;
+			els.jobStatusBox.style.display = "block";
+		}
+
+		function clearJobStatus() {
+			els.jobStatusBox.style.display = "none";
+			els.jobStatusBox.textContent = "";
+			els.jobStatusBox.className = "status";
+		}
+
+		function stopJobPolling() {
+			if (jobPollTimer) {
+				window.clearInterval(jobPollTimer);
+				jobPollTimer = null;
+			}
+			jobCurrentId = null;
+			els.jobSubmitBtn.disabled = false;
+			els.jobCancelBtn.style.display = "none";
+			els.jobLoading.style.display = "none";
+		}
+
+		function jobSubmitPayload(base64Data) {
+			// 与同步测试共用同一套模式选择: custom 复用完整检测项配置
+			const kind = getTestLevel();
+			const payload = kind === "custom"
+				? buildPayload(base64Data)
+				: { uploadFile: base64Data };
+			payload.kind = kind;
+			return payload;
+		}
+
+		function updateJobWaitText(statusText) {
+			const waitSec = Math.round((Date.now() - jobStartedAt) / 1000);
+			els.jobStatusText.textContent = statusText + "（已等待 " + waitSec + " 秒）";
+		}
+
+		async function submitJob() {
+			if (jobSubmitting) {
+				return;
+			}
+			clearJobStatus();
+			const check = validateSelectedFile();
+			if (!check.ok) {
+				showJobStatus("error", check.message);
+				return;
+			}
+			// 提交新任务前停掉旧任务的轮询
+			stopJobPolling();
+			jobSubmitting = true;
+			els.jobSubmitBtn.disabled = true;
+			els.jobLoading.style.display = "inline-flex";
+			els.jobStatusText.textContent = "正在提交...";
+			try {
+				const base64Data = await readFileAsBase64(check.file);
+				const payload = jobSubmitPayload(base64Data);
+				const apiUrl = resolveApiOrigin() + API_PATH_JOBS;
+				const resp = await fetch(apiUrl, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json"
+					},
+					body: JSON.stringify(payload)
+				});
+				const raw = await resp.text();
+				let body = null;
+				try {
+					body = raw ? JSON.parse(raw) : null;
+				} catch (parseErr) {
+					body = null;
+				}
+				if (resp.status === 405) {
+					throw new Error("接口返回 405。当前地址很可能不是测试后端，请将测试地址设为 http://127.0.0.1:8888。");
+				}
+				if (resp.status === 413 || (body && body.code === 4130)) {
+					throw new Error("请求体超过服务器大小限制（默认 64MB），无法提交后台任务。");
+				}
+				if (!resp.ok || !body || body.code !== 200) {
+					throw new Error((body && body.msg) ? body.msg : ("HTTP " + resp.status + " 提交失败。"));
+				}
+				const jobId = body.data && body.data.jobId ? String(body.data.jobId) : "";
+				if (!jobId) {
+					throw new Error("服务端未返回任务 ID。");
+				}
+				jobCurrentId = jobId;
+				jobStartedAt = Date.now();
+				const kindText = payload.kind === "custom" ? "自定义组合" : (payload.kind === "gm2" ? "GM-Level 2" : "NIST-Level 2");
+				const customNote = payload.kind === "custom" ? "（注意：自定义组合不支持中途取消，任务将在完成后自然结束）" : "";
+				showJobStatus("success", "后台任务已提交 [" + kindText + "]，任务 ID: " + jobId + customNote);
+				els.jobCancelBtn.style.display = "";
+				jobPollTimer = window.setInterval(() => pollJob(jobId), JOB_POLL_INTERVAL_MS);
+				pollJob(jobId);
+			} catch (err) {
+				const msg = (err && err.message) ? err.message : "后台任务提交失败";
+				if (String(msg).toLowerCase().includes("failed to fetch")) {
+					showJobStatus("error", "请求失败，请确认测试后端已启动并可访问: " + resolveApiOrigin());
+				} else {
+					showJobStatus("error", msg);
+				}
+				stopJobPolling();
+			} finally {
+				jobSubmitting = false;
+			}
+		}
+
+		async function pollJob(jobId) {
+			try {
+				const resp = await fetch(resolveApiOrigin() + API_PATH_JOBS + "/" + encodeURIComponent(jobId));
+				const raw = await resp.text();
+				let body = null;
+				try {
+					body = raw ? JSON.parse(raw) : null;
+				} catch (parseErr) {
+					body = null;
+				}
+				if (!resp.ok || !body || body.code !== 200) {
+					stopJobPolling();
+					showJobStatus("error", (body && body.msg) ? body.msg : ("查询任务失败，HTTP " + resp.status + "。"));
+					return;
+				}
+				const data = body.data || {};
+				const status = String(data.status || "");
+				if (status === "done") {
+					stopJobPolling();
+					const results = Array.isArray(data.result) ? data.result : [];
+					renderResults(results);
+					showJobStatus("success", "后台任务完成，共返回 " + results.length + " 项结果。任务 ID: " + jobId);
+				} else if (status === "failed") {
+					stopJobPolling();
+					showJobStatus("error", "后台任务失败" + (data.error ? (": " + data.error) : "。") + " 任务 ID: " + jobId);
+				} else if (status === "cancelled") {
+					stopJobPolling();
+					showJobStatus("error", "后台任务已取消。任务 ID: " + jobId);
+				} else if (status === "queued") {
+					updateJobWaitText("排队中...");
+				} else if (status === "running") {
+					updateJobWaitText("后台检测中...");
+				} else {
+					els.jobStatusText.textContent = "状态: " + (status || "未知");
+				}
+			} catch (err) {
+				// 网络抖动不终止轮询, 保留任务等待下次重试
+				els.jobStatusText.textContent = "查询出现异常，将自动重试...";
+			}
+		}
+
+		async function cancelCurrentJob() {
+			if (!jobCurrentId) {
+				return;
+			}
+			try {
+				const resp = await fetch(resolveApiOrigin() + API_PATH_JOBS + "/" + encodeURIComponent(jobCurrentId), {
+					method: "DELETE"
+				});
+				const raw = await resp.text();
+				let body = null;
+				try {
+					body = raw ? JSON.parse(raw) : null;
+				} catch (parseErr) {
+					body = null;
+				}
+				if (resp.status === 404 || (body && body.code === 4040)) {
+					stopJobPolling();
+					showJobStatus("error", "任务不存在（可能已被服务端清理）。");
+					return;
+				}
+				if (resp.status === 409 || (body && body.code === 4090)) {
+					showJobStatus("error", "任务已结束，无法再次取消，等待轮询确认最终状态。");
+					return;
+				}
+				if (!resp.ok || !body || body.code !== 200) {
+					showJobStatus("error", (body && body.msg) ? body.msg : ("取消失败，HTTP " + resp.status + "。"));
+					return;
+				}
+				els.jobStatusText.textContent = "取消请求已发送，等待任务在检测项边界终止...";
+			} catch (err) {
+				showJobStatus("error", "取消请求失败，请稍后重试。");
+			}
+		}
+
 		/* ===== Test execution ===== */
 
 		let currentAbortController = null;
@@ -1290,6 +1524,8 @@
 			bindAllSelectToggle("longestAll", ["longestBit1", "longestBit0"]);
 			els.runBtn.addEventListener("click", runTest);
 			els.stopBtn.addEventListener("click", stopTest);
+			els.jobSubmitBtn.addEventListener("click", submitJob);
+			els.jobCancelBtn.addEventListener("click", cancelCurrentJob);
 		}
 
 		init();

@@ -59,27 +59,55 @@ func DiscreteFourierTransformProto(bits []bool) (float64, float64) {
 		panic("please provide test bits")
 	}
 
-	var V float64 = 0.0
-	var P float64 = 0.0
-	var Q float64 = 0.0
-
 	// Step 1 数据预处理: 0->-1, 1->1
 	N := ceilPow2(n)
 	rr := getBuffer(N)
 	defer bufferPool.Put(rr) // 函数结束时回收内存
-	for i := 0; i < N; i++ {
-		if i < n {
-			if bits[i] {
-				rr[i] = complex(1.0, 0)
-			} else {
-				rr[i] = complex(-1.0, 0)
-			}
+	for i := 0; i < n; i++ {
+		if bits[i] {
+			rr[i] = complex(1.0, 0)
 		} else {
-			rr[i] = 0
+			rr[i] = complex(-1.0, 0)
 		}
+	}
+	for i := n; i < N; i++ {
+		rr[i] = 0
 	} // 初始化 rr，未使用的部分补 0 (Padding)
+	return dftTransformAndScore(rr, n)
+}
+
+// DiscreteFourierTransformProtoBytes bytes 快速路径: 直接从字节流查表填充 ±1,
+// 跳过 []bool 中间层 (省 1MB/块 分配与遍历)。
+func DiscreteFourierTransformProtoBytes(data []byte) (float64, float64) {
+	n := len(data) * 8
+	if n == 0 {
+		panic("please provide test bits")
+	}
+
+	N := ceilPow2(n)
+	rr := getBuffer(N)
+	defer bufferPool.Put(rr) // 函数结束时回收内存
+	for i, b := range data {
+		row := &bitsExpandTable[b]
+		base := i * 8
+		for j := 0; j < 8; j++ {
+			if row[j] != 0 {
+				rr[base+j] = complex(1.0, 0)
+			} else {
+				rr[base+j] = complex(-1.0, 0)
+			}
+		}
+	}
+	for i := n; i < N; i++ {
+		rr[i] = 0
+	} // Padding
+	return dftTransformAndScore(rr, n)
+}
+
+// dftTransformAndScore DFT Step 2-6: 变换 + 阈值统计 + P/Q 计算 (rr 被覆写)。
+func dftTransformAndScore(rr []complex128, n int) (float64, float64) {
 	// Step 2 傅里叶变换
-	f, err := getFFTInstance(N)
+	f, err := getFFTInstance(len(rr))
 	if err != nil {
 		panic(err)
 	}
@@ -96,9 +124,9 @@ func DiscreteFourierTransformProto(bits []bool) (float64, float64) {
 		}
 	}
 	// Step 6
-	V = (float64(N_1) - N_0) / math.Sqrt(0.95*0.05*float64(2.0*n)/3.8) // 提前对 V 除以 2 的平方根, 避免求 P/Q 时再求解
-	P = math.Erfc(math.Abs(V))
-	Q = math.Erfc(V) / 2
+	V := (float64(N_1) - N_0) / math.Sqrt(0.95*0.05*float64(2.0*n)/3.8) // 提前对 V 除以 2 的平方根, 避免求 P/Q 时再求解
+	P := math.Erfc(math.Abs(V))
+	Q := math.Erfc(V) / 2
 	debugPrintf("DiscreteFourierTransformTest: P-value: %.6f, Q-value: %.6f", P, Q)
 	isPValueOk(P)
 	isQValueOk(Q)
@@ -113,5 +141,5 @@ func DiscreteFourierTransformTestBits(bits []bool) (float64, float64) {
 
 // DiscreteFourierTransformTest 离散傅里叶检测 (byte)
 func DiscreteFourierTransformTestBytes(data []byte) (float64, float64) {
-	return DiscreteFourierTransformProto(Byte2BitArr(data))
+	return DiscreteFourierTransformProtoBytes(data)
 }

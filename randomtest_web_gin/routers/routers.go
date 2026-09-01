@@ -1,6 +1,8 @@
 package routers
 
 import (
+	"randomtest_web_gin/pkg/middleware"
+	"randomtest_web_gin/pkg/setting"
 	v1 "randomtest_web_gin/routers/api/v1"
 
 	"github.com/gin-gonic/gin"
@@ -30,6 +32,11 @@ func InitRouter() *gin.Engine {
 	xRouter.Use(gin.Recovery())
 	xRouter.Use(corsMiddleware())
 
+	// 请求体大小限制 (阶段④ 4.1), 配置 <=0 时不限制
+	if setting.ServerSettings.MaxRequestBodyMB > 0 {
+		xRouter.Use(middleware.LimitRequestBody(int64(setting.ServerSettings.MaxRequestBodyMB) * 1024 * 1024))
+	}
+
 	/* 设置路由 */
 	// 兜底处理所有 CORS 预检请求，避免 OPTIONS 命中 404
 	xRouter.OPTIONS("/*path", func(ctx *gin.Context) {
@@ -46,6 +53,14 @@ func InitRouter() *gin.Engine {
 			randomTestHTTPRequestRouterGroup.POST("/handleRandomTestHTTPRequest", v1.HandleRandomTestHTTPRequestAPI)
 			randomTestHTTPRequestRouterGroup.POST("/handleRandomTestHTTPRequestNISTLevel2", v1.HandleRandomTestHTTPRequestNISTLevel2API)
 			randomTestHTTPRequestRouterGroup.POST("/handleRandomTestHTTPRequestGMLevel2", v1.HandleRandomTestHTTPRequestGMLevel2API)
+
+			// 异步检测任务 (阶段④ 4.2): 创建/查询/取消
+			jobsRouterGroup := randomTestHTTPRequestRouterGroup.Group("/jobs")
+			{
+				jobsRouterGroup.POST("", v1.HandleCreateRandomTestJobAPI)
+				jobsRouterGroup.GET("/:id", v1.HandleGetRandomTestJobAPI)
+				jobsRouterGroup.DELETE("/:id", v1.HandleCancelRandomTestJobAPI)
+			}
 		}
 	}
 

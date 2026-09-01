@@ -34,7 +34,22 @@ RELEASE_STDTEST_DARWIN_ARM64 = $(BUILDDIR)/z_randomtest_stdtest_darwin_arm64
 
 all: help
 
-.PHONY: prepare clean help
+.PHONY: prepare clean help test_core test_core_race update_core_golden
+
+test_core:
+	cd ./randomtest_core \
+	&& go mod download \
+	&& go test -timeout 20m -v ./...
+
+test_core_race:
+	cd ./randomtest_core \
+	&& go mod download \
+	&& go test -race -timeout 20m ./...
+
+update_core_golden:
+	cd ./randomtest_core \
+	&& go mod download \
+	&& go test . -v -run TestRegressionBaseline -args -update-golden
 
 prepare:
 	@$(call MD, $(BUILDDIR))
@@ -134,6 +149,9 @@ help:
 	@echo "make build_web_gin_windows_amd64:              build main.go -- web windows amd64 version"
 	@echo "make build_web_gin_linux_amd64:                build main.go -- web linux amd64 version"
 	@echo "make build_web_gin_darwin_arm64:               build main.go -- web darwin arm64 version"
+	@echo "make test_core:                                run randomtest_core golden/regression tests"
+	@echo "make test_core_race:                          run randomtest_core tests with race detector"
+	@echo "make update_core_golden:                      rebuild testdata/baseline.json regression baseline"
 	@echo "make run_stdtest:                              run stdtest"
 	@echo "make build_stdtest_windows_amd64:              build randomtest_stdtest.go -- stdtest windows amd64 version"
 	@echo "make build_stdtest_linux_amd64:                build randomtest_stdtest.go -- stdtest linux amd64 version"

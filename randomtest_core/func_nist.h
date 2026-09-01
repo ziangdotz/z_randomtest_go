@@ -20,11 +20,17 @@ void SetNistDebug(int enabled);
 #define MAXNUMOFTEMPLATES 148 /* APERIODIC TEMPLATES: 148=>temp_length=9 */
 
 /** NIST 测试函数声明 **/
-
-double* NonOverlappingTemplateMatchings_NIST(unsigned char* epsilon, int n, int m, char* template_filepath, int* pvalues_num);
-double OverlappingTemplateMatchings_NIST(unsigned char* epsilon, int n, int m);
-double* RandomExcursions_NIST(unsigned char* epsilon, int n, int* pvalues_num);
-double* RandomExcursionsVariant_NIST(unsigned char* epsilon, int n, int* pvalues_num);
+/*
+ * 错误码协议: 返回 0=成功; 1=参数非法; 2=模板数据不可用/解析失败; 3=内存分配失败。
+ * 失败时 *out_pvalues 置 NULL 且已分配内存被释放;
+ * J 不满足约束时 (随机游程类) 不视为错误, 返回全 0 的 pValues (与 NIST STS 语义一致)。
+ */
+int NonOverlappingTemplateMatchings_NIST(const unsigned char* epsilon, int n, int m,
+                                         const unsigned char* tmpl_data, int tmpl_len,
+                                         double** out_pvalues, int* out_pvalues_num);
+int OverlappingTemplateMatchings_NIST(const unsigned char* epsilon, int n, int m, double* out_pvalue);
+int RandomExcursions_NIST(const unsigned char* epsilon, int n, double** out_pvalues, int* out_pvalues_num);
+int RandomExcursionsVariant_NIST(const unsigned char* epsilon, int n, double** out_pvalues, int* out_pvalues_num);
 
 #ifdef __cplusplus
 }
