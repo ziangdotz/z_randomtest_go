@@ -1,6 +1,8 @@
 package routers
 
 import (
+	"net/http"
+
 	"randomtest_web_gin/pkg/middleware"
 	"randomtest_web_gin/pkg/setting"
 	v1 "randomtest_web_gin/routers/api/v1"
@@ -41,6 +43,12 @@ func InitRouter() *gin.Engine {
 	// 兜底处理所有 CORS 预检请求，避免 OPTIONS 命中 404
 	xRouter.OPTIONS("/*path", func(ctx *gin.Context) {
 		ctx.Status(204)
+	})
+
+	// 根路径返回首页 Web 控制台页面 (templates/index.html)
+	xRouter.LoadHTMLGlob("templates/*")
+	xRouter.GET("/", func(ctx *gin.Context) {
+		ctx.HTML(http.StatusOK, "index.html", nil)
 	})
 
 	// 公共访问 Api Version.1 路由组

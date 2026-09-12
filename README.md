@@ -115,6 +115,12 @@ go run main.go
 
 #### **4. randomtest_web_gin API 端点**
 
+页面端点:
+
+| 端点 | 说明 |
+|---|---|
+| `GET /` | 返回内置 Web 控制台首页 (`templates/index.html`) |
+
 同步端点 (阻塞直至检测完成, 响应 `{code, msg, data}`):
 
 | 端点 | 说明 |
