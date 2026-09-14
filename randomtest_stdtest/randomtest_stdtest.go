@@ -70,7 +70,7 @@ func jisuan(sampleSize int) (int, int) {
 	sampleSizeF := float64(sampleSize)
 	proportion_threshold_max := (randomtest_core.AlphaHAT + 3.0*math.Sqrt((randomtest_core.AlphaHAT*randomtest_core.Alpha)/sampleSizeF)) * sampleSizeF
 	proportion_threshold_min := (randomtest_core.AlphaHAT - 3.0*math.Sqrt((randomtest_core.AlphaHAT*randomtest_core.Alpha)/sampleSizeF)) * sampleSizeF
-	return int(proportion_threshold_max), int(proportion_threshold_min)
+	return int(math.Floor(proportion_threshold_max)), int(math.Ceil(proportion_threshold_min))
 }
 
 // fileItemPassed 目录模式单文件判定, 复刻旧实现的 "PCount/QCount 前后增量" 语义:
@@ -157,19 +157,20 @@ func printTestLevelXGMFuncResults(testNum int, stats []randomtest_core.ItemStat)
 	fmt.Println(strings.Repeat("-", 85))
 }
 
-func printTestNISTOrGMErrorFileList(fileDetails [][]FileDetail, stats []randomtest_core.ItemStat) {
+func printTestNISTOrGMErrorFileList(fileDetails [][]FileDetail, stats []randomtest_core.ItemStat, gm bool) {
 	fmt.Println("\n❌ NIST or GM 测试不通过的文件清单")
 	fmt.Println(strings.Repeat("=", 85))
 	for i, item := range stats {
 		hasFail := false
 		fmt.Printf("测试项: %s\n", item.Name)
 		for _, detail := range fileDetails[i] {
-			if !detail.PPassed || !detail.QPassed {
+			/* NIST 套件不统计 Q 值 (QPassed 恒为 false), 仅按 P 判定, 避免清单全量打印 */
+			if !detail.PPassed || (gm && !detail.QPassed) {
 				status := ""
 				if !detail.PPassed {
 					status += "P不通过 "
 				}
-				if !detail.QPassed {
+				if gm && !detail.QPassed {
 					status += "Q不通过 "
 				}
 				fmt.Printf("  - [失败] %-30s: %s\n", detail.FileName, status)
@@ -220,6 +221,9 @@ func (runStandardRandomTestStruct *RunStandardRandomTestStruct) run(opt randomte
 	}
 
 	if runStandardRandomTestStruct.IsFile {
+		if strings.TrimSpace(runStandardRandomTestStruct.FilePath) == "" {
+			return fmt.Errorf("[Error] FilePath 为空: 请检查配置文件 FilePath 键 (区分大小写) 与引号格式 (值仅需一对双引号)")
+		}
 		if runStandardRandomTestStruct.TestNum <= 0 {
 			return fmt.Errorf("[Error] TestNum 必须大于 0")
 		}
@@ -252,7 +256,7 @@ func (runStandardRandomTestStruct *RunStandardRandomTestStruct) run(opt randomte
 		printTestLevelXGMFuncResults(denominator, stats)
 	}
 	if !runStandardRandomTestStruct.IsFile && multi {
-		printTestNISTOrGMErrorFileList(fileDetails, stats)
+		printTestNISTOrGMErrorFileList(fileDetails, stats, suite.Standard == "GM")
 	}
 	return nil
 }
@@ -277,6 +281,22 @@ func mapToSection(section string, v interface{}) {
 	}
 }
 
+// trimIniQuotes 剥离 ini 值残留的首尾引号 (如误写为 ""path"" 时解析残留的内层引号),
+// 避免路径混入引号字符导致打开失败。
+func trimIniQuotes(s string) string {
+	s = strings.TrimSpace(s)
+	for len(s) >= 2 && ((s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'')) {
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
+}
+
+// sanitizeConfigPaths 统一清理配置路径字段。
+func sanitizeConfigPaths() {
+	RunStandardRandomTestEg.FilePath = trimIniQuotes(RunStandardRandomTestEg.FilePath)
+	RunStandardRandomTestEg.RootDirPath = trimIniQuotes(RunStandardRandomTestEg.RootDirPath)
+}
+
 // 前置初始化
 func init() {
 	var err error
@@ -294,6 +314,7 @@ func init() {
 	}
 	// 加载 config 测试用例信息
 	mapToSection("config", RunStandardRandomTestEg)
+	sanitizeConfigPaths()
 }
 
 // 程序主函数
