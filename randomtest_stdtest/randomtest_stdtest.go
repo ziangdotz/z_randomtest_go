@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
-	"math"
 	"randomtest_core"
+	"randomtest_core/report"
 	"runtime"
 	"strings"
 	"sync"
@@ -27,12 +27,6 @@ type RunStandardRandomTestStruct struct {
 	RootDirPath string `form:"rootDirPath" json:"rootDirPath"`                  // 测试文件根目录路径 (IsFile == false)
 	TestType    string `form:"testFileType" json:"testType" binding:"required"` // 检测标准类型 (NIST / GM)
 	TestLevel   int    `form:"testLevel" json:"testLevel" binding:"required"`   // 检测标准等级 (NIST 默认为 2 级; 主要针对 GM: 1 级-20000 bits, 2 级-1000000 bits, 3 级-100000000 bits)
-}
-
-type FileDetail struct {
-	FileName string
-	PPassed  bool
-	QPassed  bool
 }
 
 func printProgress(stage string, done, total int, currentFile string) {
@@ -66,121 +60,17 @@ func suiteFor(testType string, level int) (*randomtest_core.Suite, error) {
 	}
 }
 
-func jisuan(sampleSize int) (int, int) {
-	sampleSizeF := float64(sampleSize)
-	proportion_threshold_max := (randomtest_core.AlphaHAT + 3.0*math.Sqrt((randomtest_core.AlphaHAT*randomtest_core.Alpha)/sampleSizeF)) * sampleSizeF
-	proportion_threshold_min := (randomtest_core.AlphaHAT - 3.0*math.Sqrt((randomtest_core.AlphaHAT*randomtest_core.Alpha)/sampleSizeF)) * sampleSizeF
-	return int(math.Floor(proportion_threshold_max)), int(math.Ceil(proportion_threshold_min))
-}
-
-// fileItemPassed 目录模式单文件判定, 复刻旧实现的 "PCount/QCount 前后增量" 语义:
-//   - RequireAll (SerialTest): 双 P (及双 Q) 全过才算通过
-//   - 单值检测: p/q 通过即通过
-//   - 多值检测 (RE/REV/NonOverlapping): 旧实现 PCount/QCount 不递增, 恒判定为不通过 (保持既有行为)
-//   - NIST 套件的 Q 值从不参与统计, QPassed 恒为 false
-func fileItemPassed(o randomtest_core.Outcome, gm bool) (bool, bool) {
-	pPassed := false
-	qPassed := false
-	switch {
-	case o.RequireAll:
-		pPassed = randomtest_core.AllPValuesPassed(o.P)
-		if gm {
-			qPassed = randomtest_core.AllQValuesPassed(o.Q)
-		}
-	case len(o.P) == 1:
-		pPassed = randomtest_core.PValuePassed(o.P[0])
-		if gm && len(o.Q) == 1 {
-			qPassed = randomtest_core.QValuePassed(o.Q[0])
-		}
+// printStatsTable 按标准模板输出测试结果统计表 (阈值与行生成收敛到 report 包)。
+func printStatsTable(level, testNum int, stats []randomtest_core.ItemStat, gm bool) {
+	for _, line := range report.StatsTableLines(level, testNum, stats, gm) {
+		fmt.Println(line)
 	}
-	return pPassed, qPassed
 }
 
-func printTestLevelXNISTFuncResults(testNum int, stats []randomtest_core.ItemStat) {
-	fmt.Printf("\n📊 NIST Level%d 测试结果统计\n", RunStandardRandomTestEg.TestLevel)
-	fmt.Println(strings.Repeat("-", 75))
-	fmt.Printf("%-45s | %20s\n", "TestFuncName", "PValue Passed-Count")
-	fmt.Println(strings.Repeat("-", 75))
-	pPassedNumMax, pPassedNumMin := jisuan(testNum)
-	for _, item := range stats {
-		if item.ValuesNum != nil {
-			/* 多值检测: RE/REV 以 ValuesNum[i] 为分母 (p>0 适用语义),
-			   其余 (NonOverlappingTemplateMatching) 以 testNum 为分母 */
-			if item.Name == "RandomExcursionsTest" || item.Name == "RandomExcursionsVariantTest" {
-				for i, pCount := range item.PCounts {
-					pPassedNum1Max, pPassedNum1Min := jisuan(item.ValuesNum[i])
-					if pCount < pPassedNum1Min || pCount > pPassedNum1Max {
-						fmt.Printf("%-41s %3d | %9d/%-9d *\n", item.Name, i, pCount, item.ValuesNum[i])
-						continue
-					}
-					fmt.Printf("%-41s %3d | %9d/%-9d  \n", item.Name, i, pCount, item.ValuesNum[i])
-				}
-				continue
-			}
-			for i, pCount := range item.PCounts {
-				if pCount < pPassedNumMin || pCount > pPassedNumMax {
-					fmt.Printf("%-41s %3d | %9d/%-9d *\n", item.Name, i, pCount, testNum)
-					continue
-				}
-				fmt.Printf("%-41s %3d | %9d/%-9d  \n", item.Name, i, pCount, testNum)
-			}
-			continue
-		}
-		if item.PCount < pPassedNumMin || item.PCount > pPassedNumMax {
-			fmt.Printf("%-45s | %9d/%-9d *\n", item.Name, item.PCount, testNum)
-			continue
-		}
-		fmt.Printf("%-45s | %9d/%-9d  \n", item.Name, item.PCount, testNum)
-	}
-	fmt.Println(strings.Repeat("-", 75))
-}
-
-func printTestLevelXGMFuncResults(testNum int, stats []randomtest_core.ItemStat) {
-	fmt.Printf("\n📊 GM Level%d 测试结果统计\n", RunStandardRandomTestEg.TestLevel)
-	fmt.Println(strings.Repeat("-", 85))
-	fmt.Printf("%-35s | %21s | %21s\n", "TestFuncName", "PValue Passed-Count", "QValue Passed-Count")
-	fmt.Println(strings.Repeat("-", 85))
-	pPassedNumMax, pPassedNumMin := jisuan(testNum)
-	qPassedNumMax := pPassedNumMax
-	qPassedNumMin := pPassedNumMin
-	for _, item := range stats {
-		pPassedStr := "  "
-		qPassedStr := "  "
-		if item.PCount < pPassedNumMin || item.PCount > pPassedNumMax {
-			pPassedStr = " *"
-		}
-		if item.QCount < qPassedNumMin || item.QCount > qPassedNumMax {
-			qPassedStr = " *"
-		}
-		fmt.Printf("%-35s | %9d/%-9d%2s | %9d/%-9d%2s\n", item.Name, item.PCount, testNum, pPassedStr, item.QCount, testNum, qPassedStr)
-	}
-	fmt.Println(strings.Repeat("-", 85))
-}
-
-func printTestNISTOrGMErrorFileList(fileDetails [][]FileDetail, stats []randomtest_core.ItemStat, gm bool) {
-	fmt.Println("\n❌ NIST or GM 测试不通过的文件清单")
-	fmt.Println(strings.Repeat("=", 85))
-	for i, item := range stats {
-		hasFail := false
-		fmt.Printf("测试项: %s\n", item.Name)
-		for _, detail := range fileDetails[i] {
-			/* NIST 套件不统计 Q 值 (QPassed 恒为 false), 仅按 P 判定, 避免清单全量打印 */
-			if !detail.PPassed || (gm && !detail.QPassed) {
-				status := ""
-				if !detail.PPassed {
-					status += "P不通过 "
-				}
-				if gm && !detail.QPassed {
-					status += "Q不通过 "
-				}
-				fmt.Printf("  - [失败] %-30s: %s\n", detail.FileName, status)
-				hasFail = true
-			}
-		}
-		if !hasFail {
-			fmt.Println("  - 所有文件均通过")
-		}
-		fmt.Println(strings.Repeat("-", 40))
+// printErrorFileList 输出目录模式不通过文件清单 (Q 适用性由明细自带的 QApplicable 判定)。
+func printErrorFileList(fileDetails [][]report.FileDetail, stats []randomtest_core.ItemStat) {
+	for _, line := range report.ErrorFileListLines(fileDetails, stats) {
+		fmt.Println(line)
 	}
 }
 
@@ -202,20 +92,16 @@ func (runStandardRandomTestStruct *RunStandardRandomTestStruct) run(opt randomte
 		}
 	}
 
-	/* 目录模式: 通过 OnItemOutcome 收集每文件每检测项明细, 判定语义与旧实现一致 */
-	var fileDetails [][]FileDetail
+	/* 目录模式: 通过 OnItemOutcome 收集每文件每检测项明细, 判定语义收敛到 report 包 */
+	var fileDetails [][]report.FileDetail
 	if !runStandardRandomTestStruct.IsFile {
-		fileDetails = make([][]FileDetail, len(suite.Items))
+		fileDetails = make([][]report.FileDetail, len(suite.Items))
 		var fdMu sync.Mutex
 		isGM := suite.Standard == "GM"
 		opt.OnItemOutcome = func(fileName string, itemIdx int, o randomtest_core.Outcome) {
-			pPassed, qPassed := fileItemPassed(o, isGM)
+			detail := report.NewFileDetail(fileName, o, isGM)
 			fdMu.Lock()
-			fileDetails[itemIdx] = append(fileDetails[itemIdx], FileDetail{
-				FileName: fileName,
-				PPassed:  pPassed,
-				QPassed:  qPassed,
-			})
+			fileDetails[itemIdx] = append(fileDetails[itemIdx], detail)
 			fdMu.Unlock()
 		}
 	}
@@ -250,13 +136,10 @@ func (runStandardRandomTestStruct *RunStandardRandomTestStruct) run(opt randomte
 	if multi {
 		fmt.Printf("\n✅ 成功处理 %d 个工作线程的结果\n", opt.Workers)
 	}
-	if runStandardRandomTestStruct.TestType == "N" {
-		printTestLevelXNISTFuncResults(denominator, stats)
-	} else {
-		printTestLevelXGMFuncResults(denominator, stats)
-	}
+	gm := suite.Standard == "GM"
+	printStatsTable(runStandardRandomTestStruct.TestLevel, denominator, stats, gm)
 	if !runStandardRandomTestStruct.IsFile && multi {
-		printTestNISTOrGMErrorFileList(fileDetails, stats, suite.Standard == "GM")
+		printErrorFileList(fileDetails, stats)
 	}
 	return nil
 }
@@ -281,22 +164,6 @@ func mapToSection(section string, v interface{}) {
 	}
 }
 
-// trimIniQuotes 剥离 ini 值残留的首尾引号 (如误写为 ""path"" 时解析残留的内层引号),
-// 避免路径混入引号字符导致打开失败。
-func trimIniQuotes(s string) string {
-	s = strings.TrimSpace(s)
-	for len(s) >= 2 && ((s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'')) {
-		s = strings.TrimSpace(s[1 : len(s)-1])
-	}
-	return s
-}
-
-// sanitizeConfigPaths 统一清理配置路径字段。
-func sanitizeConfigPaths() {
-	RunStandardRandomTestEg.FilePath = trimIniQuotes(RunStandardRandomTestEg.FilePath)
-	RunStandardRandomTestEg.RootDirPath = trimIniQuotes(RunStandardRandomTestEg.RootDirPath)
-}
-
 // 前置初始化
 func init() {
 	var err error
@@ -314,7 +181,7 @@ func init() {
 	}
 	// 加载 config 测试用例信息
 	mapToSection("config", RunStandardRandomTestEg)
-	sanitizeConfigPaths()
+	report.SanitizePaths(&RunStandardRandomTestEg.FilePath, &RunStandardRandomTestEg.RootDirPath)
 }
 
 // 程序主函数

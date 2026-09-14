@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"randomtest_core"
+	"randomtest_core/report"
 	"runtime"
 	"strconv"
 	"strings"
@@ -40,12 +40,6 @@ type RunStandardRandomTestStruct struct {
 	TestType                 string `form:"testFileType" json:"testType" binding:"required"`          // 检测标准类型 (NIST / GM)
 	TestLevel                int    `form:"testLevel" json:"testLevel" binding:"required"`            // 检测标准等级 (NIST 默认为 2 级; 主要针对 GM: 1 级-20000 bits, 2 级-1000000 bits, 3 级-100000000 bits)
 	EnableSecondaryDetection bool   `form:"enableSecondaryDetection" json:"enableSecondaryDetection"` // 是否启用二级检测（当前用于前后端状态对齐）
-}
-
-type FileDetail struct {
-	FileName string
-	PPassed  bool
-	QPassed  bool
 }
 
 type OutputEvent struct {
@@ -233,18 +227,6 @@ func SaveLatestResultRowsCSV(filePath string) error {
 	return nil
 }
 
-func isPassedByRange(passCount, sampleSize int) bool {
-	if sampleSize <= 0 {
-		return false
-	}
-	maxV, minV := jisuan(sampleSize)
-	return passCount >= minV && passCount <= maxV
-}
-
-func formatPassFraction(passCount, sampleSize int) string {
-	return fmt.Sprintf("%d/%d", passCount, sampleSize)
-}
-
 func toExcelTextIfFraction(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || trimmed == "-" {
@@ -263,68 +245,29 @@ func toExcelTextIfFraction(value string) string {
 	return "=\"" + trimmed + "\""
 }
 
-func buildNISTResultRows(testNum int, stats []randomtest_core.ItemStat) []ResultTableRow {
-	rows := make([]ResultTableRow, 0, len(stats))
-	index := 1
-	for _, item := range stats {
-		if item.ValuesNum != nil {
-			/* 多值检测: RE/REV 以 ValuesNum[i] 为分母 (p>0 适用语义),
-			   其余 (NonOverlappingTemplateMatching) 以 testNum 为分母 */
-			isRandomExcursions := item.Name == "RandomExcursionsTest" || item.Name == "RandomExcursionsVariantTest"
-			for i, pCount := range item.PCounts {
-				sampleSize := testNum
-				if isRandomExcursions {
-					sampleSize = item.ValuesNum[i]
-				}
-				pText := formatPassFraction(pCount, sampleSize)
-				resultText := "通过"
-				if !isPassedByRange(pCount, sampleSize) {
-					resultText = "不通过"
-				}
-				rows = append(rows, ResultTableRow{
-					Index:  index,
-					Name:   fmt.Sprintf("%s[%d]", item.Name, i),
-					PValue: pText,
-					QValue: "-",
-					Result: resultText,
-				})
-				index++
-			}
-			continue
+// buildResultRows 生成 GUI 结果表行: 行展开与阈值判定收敛到 report 包;
+// NIST 行 Q 不适用 (QApplicable=false) 时 QValue 显示 "-", 整体结果沿用既有口径仅按 P 判定。
+func buildResultRows(testNum int, stats []randomtest_core.ItemStat, gm bool) []ResultTableRow {
+	itemRows := report.BuildRows(testNum, stats, gm)
+	rows := make([]ResultTableRow, 0, len(itemRows))
+	for i, ir := range itemRows {
+		name := ir.Name
+		if ir.Multi {
+			name = fmt.Sprintf("%s[%d]", ir.Name, ir.SubIndex)
 		}
-
-		pText := formatPassFraction(item.PCount, testNum)
-		resultText := "通过"
-		if !isPassedByRange(item.PCount, testNum) {
-			resultText = "不通过"
+		qText := "-"
+		if ir.QApplicable {
+			qText = report.FormatPassFraction(ir.QCount, ir.SampleSize)
 		}
-		rows = append(rows, ResultTableRow{
-			Index:  index,
-			Name:   item.Name,
-			PValue: pText,
-			QValue: "-",
-			Result: resultText,
-		})
-		index++
-	}
-	return rows
-}
-
-func buildGMResultRows(testNum int, stats []randomtest_core.ItemStat) []ResultTableRow {
-	rows := make([]ResultTableRow, 0, len(stats))
-	for i, item := range stats {
-		pText := formatPassFraction(item.PCount, testNum)
-		qText := formatPassFraction(item.QCount, testNum)
 		resultText := "通过"
-		/* 暂时先不管 QValue */
-		// if !isPassedByRange(item.PCount, testNum) || !isPassedByRange(item.QCount, testNum) {
-		if !isPassedByRange(item.PCount, testNum) {
+		/* 暂时先不管 QValue (既有 GM 行为, 仅按 P 判定整体结果) */
+		if !ir.PPassed {
 			resultText = "不通过"
 		}
 		rows = append(rows, ResultTableRow{
 			Index:  i + 1,
-			Name:   item.Name,
-			PValue: pText,
+			Name:   name,
+			PValue: report.FormatPassFraction(ir.PCount, ir.SampleSize),
 			QValue: qText,
 			Result: resultText,
 		})
@@ -377,121 +320,18 @@ func suiteFor(testType string, level int) (*randomtest_core.Suite, error) {
 	}
 }
 
-func jisuan(sampleSize int) (int, int) {
-	sampleSizeF := float64(sampleSize)
-	proportion_threshold_max := (randomtest_core.AlphaHAT + 3.0*math.Sqrt((randomtest_core.AlphaHAT*randomtest_core.Alpha)/sampleSizeF)) * sampleSizeF
-	proportion_threshold_min := (randomtest_core.AlphaHAT - 3.0*math.Sqrt((randomtest_core.AlphaHAT*randomtest_core.Alpha)/sampleSizeF)) * sampleSizeF
-	return int(math.Floor(proportion_threshold_max)), int(math.Ceil(proportion_threshold_min))
-}
-
-// fileItemPassed 目录模式单文件判定, 复刻旧实现的 "PCount/QCount 前后增量" 语义:
-//   - RequireAll (SerialTest): 双 P (及双 Q) 全过才算通过
-//   - 单值检测: p/q 通过即通过
-//   - 多值检测 (RE/REV/NonOverlapping): 旧实现 PCount/QCount 不递增, 恒判定为不通过 (保持既有行为)
-//   - NIST 套件的 Q 值从不参与统计, QPassed 恒为 false
-func fileItemPassed(o randomtest_core.Outcome, gm bool) (bool, bool) {
-	pPassed := false
-	qPassed := false
-	switch {
-	case o.RequireAll:
-		pPassed = randomtest_core.AllPValuesPassed(o.P)
-		if gm {
-			qPassed = randomtest_core.AllQValuesPassed(o.Q)
-		}
-	case len(o.P) == 1:
-		pPassed = randomtest_core.PValuePassed(o.P[0])
-		if gm && len(o.Q) == 1 {
-			qPassed = randomtest_core.QValuePassed(o.Q[0])
-		}
+// printStatsTable 以日志事件输出测试结果统计表 (阈值与行生成收敛到 report 包)。
+func printStatsTable(level, testNum int, stats []randomtest_core.ItemStat, gm bool) {
+	for _, line := range report.StatsTableLines(level, testNum, stats, gm) {
+		emitLogf("info", "%s\n", line)
 	}
-	return pPassed, qPassed
 }
 
-func printTestLevelXNISTFuncResults(testNum int, stats []randomtest_core.ItemStat) {
-	emitLogf("info", "\n📊 NIST Level%d 测试结果统计\n", RunStandardRandomTestEg.TestLevel)
-	emitLogf("info", "%s\n", strings.Repeat("-", 75))
-	emitLogf("info", "%-45s | %20s\n", "TestFuncName", "PValue Passed-Count")
-	emitLogf("info", "%s\n", strings.Repeat("-", 75))
-	pPassedNumMax, pPassedNumMin := jisuan(testNum)
-	for _, item := range stats {
-		if item.ValuesNum != nil {
-			/* 多值检测: RE/REV 以 ValuesNum[i] 为分母 (p>0 适用语义),
-			   其余 (NonOverlappingTemplateMatching) 以 testNum 为分母 */
-			if item.Name == "RandomExcursionsTest" || item.Name == "RandomExcursionsVariantTest" {
-				for i, pCount := range item.PCounts {
-					pPassedNum1Max, pPassedNum1Min := jisuan(item.ValuesNum[i])
-					if pCount < pPassedNum1Min || pCount > pPassedNum1Max {
-						emitLogf("info", "%-41s %3d | %9d/%-9d *\n", item.Name, i, pCount, item.ValuesNum[i])
-						continue
-					}
-					emitLogf("info", "%-41s %3d | %9d/%-9d  \n", item.Name, i, pCount, item.ValuesNum[i])
-				}
-				continue
-			}
-			for i, pCount := range item.PCounts {
-				if pCount < pPassedNumMin || pCount > pPassedNumMax {
-					emitLogf("info", "%-41s %3d | %9d/%-9d *\n", item.Name, i, pCount, testNum)
-					continue
-				}
-				emitLogf("info", "%-41s %3d | %9d/%-9d  \n", item.Name, i, pCount, testNum)
-			}
-			continue
-		}
-		if item.PCount < pPassedNumMin || item.PCount > pPassedNumMax {
-			emitLogf("info", "%-45s | %9d/%-9d *\n", item.Name, item.PCount, testNum)
-			continue
-		}
-		emitLogf("info", "%-45s | %9d/%-9d  \n", item.Name, item.PCount, testNum)
-	}
-	emitLogf("info", "%s\n", strings.Repeat("-", 75))
-}
-
-func printTestLevelXGMFuncResults(testNum int, stats []randomtest_core.ItemStat) {
-	emitLogf("info", "\n📊 GM Level%d 测试结果统计\n", RunStandardRandomTestEg.TestLevel)
-	emitLogf("info", "%s\n", strings.Repeat("-", 85))
-	emitLogf("info", "%-35s | %21s | %21s\n", "TestFuncName", "PValue Passed-Count", "QValue Passed-Count")
-	emitLogf("info", "%s\n", strings.Repeat("-", 85))
-	pPassedNumMax, pPassedNumMin := jisuan(testNum)
-	qPassedNumMax := pPassedNumMax
-	qPassedNumMin := pPassedNumMin
-	for _, item := range stats {
-		pPassedStr := "  "
-		qPassedStr := "  "
-		if item.PCount < pPassedNumMin || item.PCount > pPassedNumMax {
-			pPassedStr = " *"
-		}
-		if item.QCount < qPassedNumMin || item.QCount > qPassedNumMax {
-			qPassedStr = " *"
-		}
-		emitLogf("info", "%-35s | %9d/%-9d%2s | %9d/%-9d%2s\n", item.Name, item.PCount, testNum, pPassedStr, item.QCount, testNum, qPassedStr)
-	}
-	emitLogf("info", "%s\n", strings.Repeat("-", 85))
-}
-
-func printTestNISTOrGMErrorFileList(fileDetails [][]FileDetail, stats []randomtest_core.ItemStat, gm bool) {
-	emitLogf("info", "\n❌ NIST or GM 测试不通过的文件清单\n")
-	emitLogf("info", "%s\n", strings.Repeat("=", 85))
-	for i, item := range stats {
-		hasFail := false
-		emitLogf("info", "测试项: %s\n", item.Name)
-		for _, detail := range fileDetails[i] {
-			/* NIST 套件不统计 Q 值 (QPassed 恒为 false), 仅按 P 判定, 避免清单全量打印 */
-			if !detail.PPassed || (gm && !detail.QPassed) {
-				status := ""
-				if !detail.PPassed {
-					status += "P不通过 "
-				}
-				if gm && !detail.QPassed {
-					status += "Q不通过 "
-				}
-				emitLogf("info", "  - [失败] %-30s: %s\n", detail.FileName, status)
-				hasFail = true
-			}
-		}
-		if !hasFail {
-			emitLogf("info", "  - 所有文件均通过\n")
-		}
-		emitLogf("info", "%s\n", strings.Repeat("-", 40))
+// printErrorFileList 以日志事件输出目录模式不通过文件清单并立即 flush
+// (Q 适用性由明细自带的 QApplicable 判定, NIST 仅按 P)。
+func printErrorFileList(fileDetails [][]report.FileDetail, stats []randomtest_core.ItemStat) {
+	for _, line := range report.ErrorFileListLines(fileDetails, stats) {
+		emitLogf("info", "%s\n", line)
 	}
 	flushLogs()
 }
@@ -538,20 +378,16 @@ func (runStandardRandomTestStruct *RunStandardRandomTestStruct) HandleRandomTest
 		},
 	}
 
-	/* 目录模式: 通过 OnItemOutcome 收集每文件每检测项明细, 判定语义与旧实现一致 */
-	var fileDetails [][]FileDetail
+	/* 目录模式: 通过 OnItemOutcome 收集每文件每检测项明细, 判定语义收敛到 report 包 */
+	var fileDetails [][]report.FileDetail
 	if !runStandardRandomTestStruct.IsFile {
-		fileDetails = make([][]FileDetail, len(suite.Items))
+		fileDetails = make([][]report.FileDetail, len(suite.Items))
 		var fdMu sync.Mutex
 		isGM := suite.Standard == "GM"
 		opt.OnItemOutcome = func(fileName string, itemIdx int, o randomtest_core.Outcome) {
-			pPassed, qPassed := fileItemPassed(o, isGM)
+			detail := report.NewFileDetail(fileName, o, isGM)
 			fdMu.Lock()
-			fileDetails[itemIdx] = append(fileDetails[itemIdx], FileDetail{
-				FileName: fileName,
-				PPassed:  pPassed,
-				QPassed:  qPassed,
-			})
+			fileDetails[itemIdx] = append(fileDetails[itemIdx], detail)
 			fdMu.Unlock()
 		}
 	}
@@ -579,21 +415,13 @@ func (runStandardRandomTestStruct *RunStandardRandomTestStruct) HandleRandomTest
 	if runStandardRandomTestStruct.IsFile {
 		emitLogf("info", "\n✅ 成功处理 %d 个工作线程的结果\n", WorkerCount)
 	}
-	isNIST := runStandardRandomTestStruct.TestType == "N"
-	if isNIST {
-		printTestLevelXNISTFuncResults(denominator, stats)
-	} else {
-		printTestLevelXGMFuncResults(denominator, stats)
-	}
+	gm := suite.Standard == "GM"
+	printStatsTable(runStandardRandomTestStruct.TestLevel, denominator, stats, gm)
 	if !runStandardRandomTestStruct.IsFile {
-		printTestNISTOrGMErrorFileList(fileDetails, stats, suite.Standard == "GM")
+		printErrorFileList(fileDetails, stats)
 	}
 	flushLogs()
-	if isNIST {
-		setLatestResultRows(buildNISTResultRows(denominator, stats))
-	} else {
-		setLatestResultRows(buildGMResultRows(denominator, stats))
-	}
+	setLatestResultRows(buildResultRows(denominator, stats, gm))
 	return nil
 }
 
@@ -619,24 +447,8 @@ func loadIniConfig(required bool) error {
 	}
 	Config = config
 	mapToSection("config", RunStandardRandomTestEg)
-	sanitizeConfigPaths()
+	report.SanitizePaths(&RunStandardRandomTestEg.FilePath, &RunStandardRandomTestEg.RootDirPath)
 	return nil
-}
-
-// trimIniQuotes 剥离 ini 值残留的首尾引号 (如误写为 ""path"" 时解析残留的内层引号),
-// 避免路径混入引号字符导致打开失败。
-func trimIniQuotes(s string) string {
-	s = strings.TrimSpace(s)
-	for len(s) >= 2 && ((s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'')) {
-		s = strings.TrimSpace(s[1 : len(s)-1])
-	}
-	return s
-}
-
-// sanitizeConfigPaths 统一清理配置路径字段。
-func sanitizeConfigPaths() {
-	RunStandardRandomTestEg.FilePath = trimIniQuotes(RunStandardRandomTestEg.FilePath)
-	RunStandardRandomTestEg.RootDirPath = trimIniQuotes(RunStandardRandomTestEg.RootDirPath)
 }
 
 // 前置初始化

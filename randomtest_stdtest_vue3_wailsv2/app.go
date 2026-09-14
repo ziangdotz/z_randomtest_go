@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"randomtest_core"
+	"randomtest_core/report"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -177,19 +177,21 @@ func expectedBlockBytes(standard string, level int) (sampleSizeBits int, blockBy
 	}
 }
 
+// calcMinimumPassCount 最小通过样本数提示 (与报表判定同口径: report 阈值区间下限)。
 func calcMinimumPassCount(sampleCount int) int {
 	if sampleCount <= 0 {
 		return 0
 	}
-	return int(math.Ceil(float64(sampleCount) * randomtest_core.PassedProportion))
+	return report.MinimumPassCount(sampleCount)
 }
 
+// calcMinimumPassCountWithAlpha 按指定显著性水平计算最小通过样本数提示。
 func calcMinimumPassCountWithAlpha(alpha float64, sampleCount int) int {
 	if sampleCount <= 0 {
 		return 0
 	}
-	_ = alpha
-	return int(math.Ceil(float64(sampleCount) * randomtest_core.PassedProportion))
+	_, min := report.PassCountRangeWithAlpha(alpha, sampleCount)
+	return min
 }
 
 // ------------------------------------------------------------

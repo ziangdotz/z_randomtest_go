@@ -5,9 +5,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"math"
 
 	"randomtest_core"
+	"randomtest_core/report"
 )
 
 type RandomTestMethodStruct1 struct {
@@ -89,34 +89,18 @@ type TestFuncResultDynamic struct {
 	IsPassed     bool
 }
 
-func isMetricValuesPassed(values []float64, threshold float64) bool {
-	if len(values) == 0 {
-		return true
-	}
-
-	for _, value := range values {
-		if math.IsNaN(value) || math.IsInf(value, 0) {
-			return false
-		}
-		if value < threshold || value > 1 {
-			return false
-		}
-	}
-
-	return true
-}
-
 func calcResultIsPassed(item TestFuncResultDynamic, alpha, alphaT float64) bool {
-	if !isMetricValuesPassed(item.P1Value, alpha) {
+	// 阈值判定收敛到 report 包 (空切片视为不适用, NaN/Inf 判为不通过)
+	if !report.ValuesAllPassed(item.P1Value, alpha) {
 		return false
 	}
-	if !isMetricValuesPassed(item.P2Value, alpha) {
+	if !report.ValuesAllPassed(item.P2Value, alpha) {
 		return false
 	}
-	if !isMetricValuesPassed(item.Q1Value, alphaT) {
+	if !report.ValuesAllPassed(item.Q1Value, alphaT) {
 		return false
 	}
-	if !isMetricValuesPassed(item.Q2Value, alphaT) {
+	if !report.ValuesAllPassed(item.Q2Value, alphaT) {
 		return false
 	}
 	return true
