@@ -28,6 +28,21 @@ func TestPassCountRange(t *testing.T) {
 	if CountInRange(1000, 1000) {
 		t.Fatal("CountInRange(1000, 1000) = true, want false (超出 max)")
 	}
+	// n=55 (NIST 推荐最小样本量): 3σ 区间 [52.2363, 56.6637] → max=Floor=56, min=Ceil=53
+	// (旧比例口径 ceil(55*0.98056)=54 与判定脱节的回归用例)
+	max55, min55 := PassCountRange(55)
+	if max55 != 56 || min55 != 53 {
+		t.Fatalf("PassCountRange(55) = (%d, %d), want (56, 53)", max55, min55)
+	}
+	if CountInRange(52, 55) {
+		t.Fatal("CountInRange(52, 55) = true, want false")
+	}
+	if !CountInRange(53, 55) {
+		t.Fatal("CountInRange(53, 55) = false, want true")
+	}
+	if !CountInRange(55, 55) {
+		t.Fatal("CountInRange(55, 55) = false, want true (max=56 超出 n, 全通过应判过)")
+	}
 	// sampleSize<=0 不可判定
 	if CountInRange(0, 0) {
 		t.Fatal("CountInRange(0, 0) = true, want false")
@@ -42,6 +57,9 @@ func TestPassCountRangeWithAlphaAndMinimum(t *testing.T) {
 	}
 	if got := MinimumPassCount(1000); got != 981 {
 		t.Fatalf("MinimumPassCount(1000) = %d, want 981", got)
+	}
+	if got := MinimumPassCount(55); got != 53 {
+		t.Fatalf("MinimumPassCount(55) = %d, want 53", got)
 	}
 	if got := MinimumPassCount(0); got != 0 {
 		t.Fatalf("MinimumPassCount(0) = %d, want 0", got)
