@@ -7,9 +7,8 @@ import (
 )
 
 const (
-	DefaultAlpha             = 0.01    // Alpha 显著性水平默认值
-	DefaultAlphaT    float64 = 0.0001  // AlphaT 分布均匀性的显著性水平默认值
-	PassedProportion float64 = 0.98056 // 随机性检测最小通过比例
+	DefaultAlpha          = 0.01   // Alpha 显著性水平默认值
+	DefaultAlphaT float64 = 0.0001 // AlphaT 分布均匀性的显著性水平默认值
 )
 
 var (
