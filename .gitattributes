@@ -1,0 +1,6 @@
+# 统一文本文件行尾为 LF (覆盖 core.autocrlf), 保证 gofmt / 前端工具链校验稳定
+* text=auto eol=lf
+
+# 二进制数据保持原样
+*.bin binary
+*.exe binary

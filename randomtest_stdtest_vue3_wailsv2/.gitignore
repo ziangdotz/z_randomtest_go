@@ -1,3 +1,5 @@
 build/bin
 node_modules
 frontend/dist
+# go build 在模块根目录产生的二进制产物
+*.exe
