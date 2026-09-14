@@ -12,7 +12,6 @@ import {
 
 /* ======================== Constants ======================== */
 
-const MINIMUM_PASS_RATE = 0.98056
 const TABLE_EMPTY_ROWS = 34
 const LOG_FLUSH_DELAY_MS = 80
 const LOG_MAX_LINES = 2000
@@ -156,14 +155,25 @@ const appendRuntimeLog = (message) => {
 	}
 }
 
+/* 最小通过样本量: 与后端 report.PassCountRangeWithAlpha 同口径 (3σ 区间下限 Ceil),
+   避免前端提示与报表判定脱节 (如 n=55, α=0.01 应为 53, 旧比例口径 0.98056 误算为 54) */
+const calcMinimumPassCount = (alpha, sampleCount) => {
+	const n = Number(sampleCount)
+	const a = Number(alpha)
+	if (!Number.isFinite(n) || n <= 0 || !Number.isFinite(a) || a <= 0 || a >= 1) {
+		return 0
+	}
+	const alphaHAT = 1 - a
+	const margin = 3 * Math.sqrt((alphaHAT * a) / n)
+	return Math.ceil((alphaHAT - margin) * n)
+}
+
 const recalcSampleStats = () => {
 	testSampleStats.sampleSizeBits = parseLevelBits(testInputParams.randomnessTestLevel)
-	const sampleCount = Number(testSampleStats.sampleCount)
-	if (Number.isNaN(sampleCount) || sampleCount <= 0) {
-		testSampleStats.minimumPassCount = 0
-		return
-	}
-	testSampleStats.minimumPassCount = Math.ceil(sampleCount * MINIMUM_PASS_RATE)
+	testSampleStats.minimumPassCount = calcMinimumPassCount(
+		testInputParams.pValueThreshold,
+		testSampleStats.sampleCount
+	)
 }
 
 const syncProgressCssVar = () => {
