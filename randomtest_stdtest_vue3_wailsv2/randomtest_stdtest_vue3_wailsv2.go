@@ -52,6 +52,7 @@ type OutputEvent struct {
 	Type        string           `json:"type"`
 	Level       string           `json:"level,omitempty"`
 	Message     string           `json:"message,omitempty"`
+	Messages    []string         `json:"messages,omitempty"`
 	Stage       string           `json:"stage,omitempty"`
 	Done        int              `json:"done,omitempty"`
 	Total       int              `json:"total,omitempty"`
@@ -68,7 +69,48 @@ func SetRandomTestOutputHandler(handler OutputEventHandler) {
 	outputHandler = handler
 }
 
+// logBatchMax 日志批量下发阈值: 目录模式单次运行可产生数万行日志,
+// 逐行 EventsEmit 会淹没前端渲染线程导致界面卡死, 故合并为批次发送。
+const logBatchMax = 50
+
+var (
+	logBatchMu    sync.Mutex
+	logBatchLines []string
+)
+
 func emitOutputEvent(event OutputEvent) {
+	if event.Type != "log" {
+		dispatchOutputEvent(event)
+		return
+	}
+
+	logBatchMu.Lock()
+	logBatchLines = append(logBatchLines, event.Message)
+	var batch []string
+	if len(logBatchLines) >= logBatchMax {
+		batch = logBatchLines
+		logBatchLines = nil
+	}
+	logBatchMu.Unlock()
+
+	if len(batch) > 0 {
+		dispatchOutputEvent(OutputEvent{Type: "log_batch", Messages: batch})
+	}
+}
+
+// flushLogs 立即下发缓冲的日志行: 在阶段边界与测试结束处调用,
+// 保证日志事件先于 result_rows / randomtest_state 事件到达前端。
+func flushLogs() {
+	logBatchMu.Lock()
+	batch := logBatchLines
+	logBatchLines = nil
+	logBatchMu.Unlock()
+	if len(batch) > 0 {
+		dispatchOutputEvent(OutputEvent{Type: "log_batch", Messages: batch})
+	}
+}
+
+func dispatchOutputEvent(event OutputEvent) {
 	outputHandlerMutex.RLock()
 	handler := outputHandler
 	outputHandlerMutex.RUnlock()
@@ -80,6 +122,12 @@ func emitOutputEvent(event OutputEvent) {
 
 	if event.Type == "progress" {
 		fmt.Printf("[PROGRESS] %s: %d/%d (%.2f%%) %s\n", event.Stage, event.Done, event.Total, event.Percent, event.CurrentFile)
+		return
+	}
+	if event.Type == "log_batch" {
+		for _, message := range event.Messages {
+			fmt.Print(message)
+		}
 		return
 	}
 	fmt.Print(event.Message)
@@ -333,7 +381,7 @@ func jisuan(sampleSize int) (int, int) {
 	sampleSizeF := float64(sampleSize)
 	proportion_threshold_max := (randomtest_core.AlphaHAT + 3.0*math.Sqrt((randomtest_core.AlphaHAT*randomtest_core.Alpha)/sampleSizeF)) * sampleSizeF
 	proportion_threshold_min := (randomtest_core.AlphaHAT - 3.0*math.Sqrt((randomtest_core.AlphaHAT*randomtest_core.Alpha)/sampleSizeF)) * sampleSizeF
-	return int(proportion_threshold_max), int(proportion_threshold_min)
+	return int(math.Floor(proportion_threshold_max)), int(math.Ceil(proportion_threshold_min))
 }
 
 // fileItemPassed 目录模式单文件判定, 复刻旧实现的 "PCount/QCount 前后增量" 语义:
@@ -420,19 +468,20 @@ func printTestLevelXGMFuncResults(testNum int, stats []randomtest_core.ItemStat)
 	emitLogf("info", "%s\n", strings.Repeat("-", 85))
 }
 
-func printTestNISTOrGMErrorFileList(fileDetails [][]FileDetail, stats []randomtest_core.ItemStat) {
+func printTestNISTOrGMErrorFileList(fileDetails [][]FileDetail, stats []randomtest_core.ItemStat, gm bool) {
 	emitLogf("info", "\n❌ NIST or GM 测试不通过的文件清单\n")
 	emitLogf("info", "%s\n", strings.Repeat("=", 85))
 	for i, item := range stats {
 		hasFail := false
 		emitLogf("info", "测试项: %s\n", item.Name)
 		for _, detail := range fileDetails[i] {
-			if !detail.PPassed || !detail.QPassed {
+			/* NIST 套件不统计 Q 值 (QPassed 恒为 false), 仅按 P 判定, 避免清单全量打印 */
+			if !detail.PPassed || (gm && !detail.QPassed) {
 				status := ""
 				if !detail.PPassed {
 					status += "P不通过 "
 				}
-				if !detail.QPassed {
+				if gm && !detail.QPassed {
 					status += "Q不通过 "
 				}
 				emitLogf("info", "  - [失败] %-30s: %s\n", detail.FileName, status)
@@ -444,12 +493,16 @@ func printTestNISTOrGMErrorFileList(fileDetails [][]FileDetail, stats []randomte
 		}
 		emitLogf("info", "%s\n", strings.Repeat("-", 40))
 	}
+	flushLogs()
 }
 
 // HandleRandomTestStandardRunMulti 并发执行入口: 文件分块/目录扫描与并发调度全部由
 // core 的 SuiteRunner 承担, 进度/日志/结果行通过既有事件协议 (randomtest_output) 上报。
 func (runStandardRandomTestStruct *RunStandardRandomTestStruct) HandleRandomTestStandardRunMulti() error {
 	emitLogf("info", "\n🚩 [Info] 开始执行并发随机性测试\n")
+	flushLogs()
+	/* 任何提前返回路径都不丢失缓冲日志 (成功路径此处缓冲已空, 为 no-op) */
+	defer flushLogs()
 	if IsStopRandomTestRequested() {
 		return fmt.Errorf("测试已停止")
 	}
@@ -463,6 +516,9 @@ func (runStandardRandomTestStruct *RunStandardRandomTestStruct) HandleRandomTest
 	suite, err := suiteFor(runStandardRandomTestStruct.TestType, runStandardRandomTestStruct.TestLevel)
 	if err != nil {
 		return emitErrorf("%v", err)
+	}
+	if runStandardRandomTestStruct.IsFile && strings.TrimSpace(runStandardRandomTestStruct.FilePath) == "" {
+		return emitErrorf("[Error] FilePath 为空: 请检查配置文件 FilePath 键 (区分大小写) 与引号格式 (值仅需一对双引号)")
 	}
 	if runStandardRandomTestStruct.IsFile && runStandardRandomTestStruct.TestNum <= 0 {
 		return emitErrorf("[Error] TestNum 必须大于 0")
@@ -516,6 +572,7 @@ func (runStandardRandomTestStruct *RunStandardRandomTestStruct) HandleRandomTest
 	if runCtxLocal.Err() != nil {
 		return fmt.Errorf("测试已停止")
 	}
+	flushLogs()
 
 	stats := runner.Stats()
 	denominator := int(atomic.LoadInt64(&denominatorAtomic))
@@ -529,8 +586,9 @@ func (runStandardRandomTestStruct *RunStandardRandomTestStruct) HandleRandomTest
 		printTestLevelXGMFuncResults(denominator, stats)
 	}
 	if !runStandardRandomTestStruct.IsFile {
-		printTestNISTOrGMErrorFileList(fileDetails, stats)
+		printTestNISTOrGMErrorFileList(fileDetails, stats, suite.Standard == "GM")
 	}
+	flushLogs()
 	if isNIST {
 		setLatestResultRows(buildNISTResultRows(denominator, stats))
 	} else {
@@ -561,7 +619,24 @@ func loadIniConfig(required bool) error {
 	}
 	Config = config
 	mapToSection("config", RunStandardRandomTestEg)
+	sanitizeConfigPaths()
 	return nil
+}
+
+// trimIniQuotes 剥离 ini 值残留的首尾引号 (如误写为 ""path"" 时解析残留的内层引号),
+// 避免路径混入引号字符导致打开失败。
+func trimIniQuotes(s string) string {
+	s = strings.TrimSpace(s)
+	for len(s) >= 2 && ((s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'')) {
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
+}
+
+// sanitizeConfigPaths 统一清理配置路径字段。
+func sanitizeConfigPaths() {
+	RunStandardRandomTestEg.FilePath = trimIniQuotes(RunStandardRandomTestEg.FilePath)
+	RunStandardRandomTestEg.RootDirPath = trimIniQuotes(RunStandardRandomTestEg.RootDirPath)
 }
 
 // 前置初始化

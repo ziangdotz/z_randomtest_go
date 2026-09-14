@@ -14,6 +14,8 @@ import {
 
 const MINIMUM_PASS_RATE = 0.98056
 const TABLE_EMPTY_ROWS = 34
+const LOG_FLUSH_DELAY_MS = 80
+const LOG_MAX_LINES = 2000
 
 /* ======================== State ======================== */
 
@@ -125,16 +127,33 @@ const formatDurationMs = (elapsedMs) => {
 
 /* ======================== Mutators ======================== */
 
+/* 日志缓冲: 后端批量事件可达数千行, 逐行拼接 + 逐行重渲染会阻塞 JS 主线程,
+   故先入队, 定时合并为一次响应式更新, 并限制总行数上限 */
+const pendingLogLines = []
+let logFlushTimer = 0
+
+const flushRuntimeLog = () => {
+	logFlushTimer = 0
+	if (pendingLogLines.length === 0) {
+		return
+	}
+	const chunk = pendingLogLines.splice(0, pendingLogLines.length).join('\n')
+	runtimeLogText.value = runtimeLogText.value.length === 0 ? chunk : `${runtimeLogText.value}\n${chunk}`
+	const lines = runtimeLogText.value.split('\n')
+	if (lines.length > LOG_MAX_LINES) {
+		runtimeLogText.value = lines.slice(lines.length - LOG_MAX_LINES).join('\n')
+	}
+}
+
 const appendRuntimeLog = (message) => {
 	const line = String(message ?? '').trimEnd()
 	if (!line) {
 		return
 	}
-	if (runtimeLogText.value.length === 0) {
-		runtimeLogText.value = line
-		return
+	pendingLogLines.push(line)
+	if (logFlushTimer === 0) {
+		logFlushTimer = window.setTimeout(flushRuntimeLog, LOG_FLUSH_DELAY_MS)
 	}
-	runtimeLogText.value = `${runtimeLogText.value}\n${line}`
 }
 
 const recalcSampleStats = () => {
@@ -159,6 +178,7 @@ const clearInputDataPath = () => {
 }
 
 const clearRuntimeLogText = () => {
+	pendingLogLines.length = 0
 	runtimeLogText.value = ''
 }
 
@@ -292,6 +312,12 @@ const handleBackendOutput = (event) => {
 		resultRows.value = Array.isArray(event.rows) ? event.rows : []
 		return
 	}
+	if (event.type === 'log_batch' && Array.isArray(event.messages)) {
+		for (const message of event.messages) {
+			appendRuntimeLog(message)
+		}
+		return
+	}
 	if (event.type === 'log' && event.message) {
 		appendRuntimeLog(event.message)
 	}
@@ -334,6 +360,10 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
 	Runtime.EventsOff('randomtest_output', 'randomtest_state')
+	if (logFlushTimer !== 0) {
+		window.clearTimeout(logFlushTimer)
+		logFlushTimer = 0
+	}
 })
 
 /* ======================== Watchers ======================== */
