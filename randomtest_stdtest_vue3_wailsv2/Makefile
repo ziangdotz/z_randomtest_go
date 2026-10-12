@@ -39,7 +39,10 @@ run_dev: prepare
 build_windows_amd64: prepare clean
 	@echo "Build started: Windows amd64 version..."
 	wails build -platform windows/amd64 $(FLAGS)
+	@REM Published executables must not inherit a Low integrity label from the build directory.
+	icacls "$(call FIX_PATH,$(BUILDDIR)/$(APPNAME).exe)" /setintegritylevel Medium
 	$(call compress, $(BUILDDIR)/$(APPNAME).exe)
+	@if exist "$(call FIX_PATH,$(BUILDDIR)/$(APPNAME)_upx.exe)" icacls "$(call FIX_PATH,$(BUILDDIR)/$(APPNAME)_upx.exe)" /setintegritylevel Medium
 	@echo "Build completed."
 
 
