@@ -10,10 +10,10 @@ else
 	MD = mkdir -p $(1)
 endif
 
-
-MUSL_CC_PATH = C:/Tools/cross-tools/x86_64-linux-musl/bin/x86_64-linux-musl-gcc.exe
-MUSL_CXX_PATH = C:/Tools/cross-tools/x86_64-linux-musl/bin/x86_64-linux-musl-g++.exe
-ZIG_PATH = C:/Tools/zig-x86_64-windows-0.16.0-dev.2490+fce7878a9/zig.exe
+ZIG_PATH ?= zig
+ZIG_TARGET ?= x86_64-linux-musl
+ZIG_CC ?= $(ZIG_PATH) cc -target $(ZIG_TARGET)
+ZIG_CXX ?= $(ZIG_PATH) c++ -target $(ZIG_TARGET)
 
 WEB_CODE_PATH = ./randomtest_web_gin
 WEB_MAIN = main.go
@@ -29,7 +29,6 @@ RELEASE_WEB_GIN_WINDOWS_AMD64 = $(BUILDDIR)/z_randomtest_web_gin_windows_amd64.e
 RELEASE_WEB_GIN_LINUX_AMD64 = $(BUILDDIR)/z_randomtest_web_gin_linux_amd64
 RELEASE_STDTEST_WINDOWS_AMD64 = $(BUILDDIR)/z_randomtest_stdtest_windows_amd64.exe
 RELEASE_STDTEST_LINUX_AMD64 = $(BUILDDIR)/z_randomtest_stdtest_linux_amd64
-RELEASE_STDTEST_DARWIN_ARM64 = $(BUILDDIR)/z_randomtest_stdtest_darwin_arm64
 
 all: help
 
@@ -70,7 +69,7 @@ build_web_gin_linux_amd64: prepare clean
 	@echo "Build started: web Linux amd64 version..."
 	@go mod download
 	@set CGO_ENABLED=1&& set GOOS=linux&& set GOARCH=amd64&&\
-	set CC=$(MUSL_CC_PATH)&&set CXX=$(MUSL_CXX_PATH)&&\
+	set CC=$(ZIG_CC)&&set CXX=$(ZIG_CXX)&&\
 	go build -trimpath -ldflags "-linkmode external -extldflags -static -s -w" -o $(call FIX_PATH, $(RELEASE_WEB_GIN_LINUX_AMD64)) $(call FIX_PATH, $(WEB_MAIN_PATH))
 	@echo "Build completed: $(RELEASE_WEB_GIN_LINUX_AMD64)"
 
@@ -91,7 +90,7 @@ build_stdtest_linux_amd64: prepare clean
 	@echo "Build started: stdtest Linux amd64 version..."
 	@go mod download
 	@set CGO_ENABLED=1&&set GOOS=linux&&set GOARCH=amd64&&\
-	set CC=$(MUSL_CC_PATH)&&set CXX=$(MUSL_CXX_PATH)&&\
+	set CC=$(ZIG_CC)&&set CXX=$(ZIG_CXX)&&\
 	go build -trimpath -ldflags "-linkmode external -extldflags -static -s -w" -o $(call FIX_PATH, $(RELEASE_STDTEST_LINUX_AMD64)) $(call FIX_PATH, $(STDTEST_MAIN_PATH))
 	@echo "Build completed: $(RELEASE_STDTEST_LINUX_AMD64)"
 
@@ -115,7 +114,6 @@ clean:
 	$(call RF, $(RELEASE_WEB_GIN_LINUX_AMD64))
 	$(call RF, $(RELEASE_STDTEST_WINDOWS_AMD64))
 	$(call RF, $(RELEASE_STDTEST_LINUX_AMD64))
-	$(call RF, $(RELEASE_STDTEST_DARWIN_ARM64))
 	go clean
 
 help:
@@ -137,4 +135,3 @@ help:
 	@echo "make help:                                     see custom commands"
 	@echo "make:                                          like 'make help'"
 	@echo ------------------------
-

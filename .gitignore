@@ -1,6 +1,65 @@
-.claude
+# 本地 AI / IDE 配置
+/.claude/
+/.vscode/
+/.idea/
+*.code-workspace
 
-data/*
-!data/.gitkeep
-release/
-!.gitignore
+# 操作系统生成文件
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# 本地环境与敏感配置
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Go / CGO 构建与测试产物
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.coverprofile
+coverage.txt
+coverage.html
+coverage/
+*.prof
+*.pprof
+__debug_bin*
+/randomtest_stdtest/randomtest_stdtest
+/randomtest_web_gin/randomtest_web_gin
+/randomtest_stdtest_vue3_wailsv2/randomtest_stdtest_vue3_wailsv2
+
+# Zig 本地构建缓存
+.zig-cache/
+zig-out/
+
+# Node.js / Vite
+**/node_modules/
+**/.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Wails 生成物
+/randomtest_stdtest_vue3_wailsv2/build/bin/
+/randomtest_stdtest_vue3_wailsv2/build/diagnostics/
+/randomtest_stdtest_vue3_wailsv2/frontend/dist/
+
+# 项目运行数据与发布产物
+/data/*
+!/data/.gitkeep
+/release/
+
+# 日志与临时文件
+*.log
+*.tmp
+*.temp
+*.bak
+*~
